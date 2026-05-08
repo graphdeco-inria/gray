@@ -1,0 +1,8 @@
+{
+    "exp_power": 3,
+    "alpha_threshold": 0.02,
+    "pruning_min_weight": 5e-7,
+    "scale_decay": 0.999800,
+    "iterations": 7500,
+    "sh_update_laziness": 12
+}

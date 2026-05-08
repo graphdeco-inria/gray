@@ -1,0 +1,76 @@
+[project]
+name = "gray"
+version = "0.1.0"
+description = "A raytracer for 3D gaussians"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "torch>=2.8.0",
+    "torchvision>=0.20.0",
+    "matplotlib>=3.10.5",
+    "numpy>=2.2.6",
+    "pillow>=11.3.0",
+    "piq>=0.8.0",
+    "plyfile>=1.1.2",
+    "safetensors>=0.6.2",
+    "tqdm>=4.67.1",
+    "tyro>=0.9.28",
+    "romatch",
+    "imgui-bundle>=1.92.0",
+    "glfw>=2.9.0",
+    "pyopengl>=3.1.10",
+    "websockets>=15.0.1",
+    "cuda-python>=13.0.1",
+    "xformers>=0.0.32.post2",
+    "av>=16.0.1",
+    "scipy>=1.15.3",
+    "fused-ssim",
+    "tensorboard>=2.20.0",
+    "pandas>=2.3.3",
+]
+
+[project.optional-dependencies]
+tcnn = [
+    "tinycudann",
+]
+
+[tool.uv]
+package = false
+no-build-isolation-package = ["fused-ssim", "tinycudann"]
+
+[tool.uv.sources]
+romatch = { path = "third_party/RoMa" }
+fused-ssim = { git = "https://github.com/rahul-goel/fused-ssim/" }
+tinycudann = { git = "https://github.com/NVlabs/tiny-cuda-nn.git", subdirectory = "bindings/torch" }
+
+[tool.ruff]
+line-length = 100
+exclude = [
+    "third_party",
+]
+
+[dependency-groups]
+dev = [
+    "ipdb>=0.13.13",
+    "ninja>=1.13.0",
+    "pytest>=8.4.1",
+    "pytest-forked>=1.6.0",
+    "ruff>=0.12.8",
+]
+
+[build-system]
+requires = [
+    "scikit-build-core>=0.8", 
+    "torch>=2.8.0"
+]
+build-backend = "scikit_build_core.build"
+
+[tool.scikit-build]
+sdist.include = ["cuda", "CMakeLists.txt"]
+
+[tool.scikit-build.cmake]
+version = ">=3.18"
+args = []  # add -D flags here if needed
+
+[tool.pytest.ini_options]
+addopts = "--forked"

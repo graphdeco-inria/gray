@@ -1,0 +1,9 @@
+{
+    "exp_power": 1,
+    "alpha_threshold": 0.001,
+    "t_threshold": 0.001,
+    "pruning_min_weight": 1e-9,
+    "init_binning": false,
+    "scale_decay": 1.0,
+    "iterations": 30000
+}

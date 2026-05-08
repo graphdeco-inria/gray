@@ -1,0 +1,6 @@
+{
+    "search.exclude": {
+        "third_party/optix": true,
+        "third_party/RoMa": true,
+    }
+}
