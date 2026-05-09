@@ -147,7 +147,6 @@ Two types of MLPs are supported:
 - Post-processing MLPs (`post_mlp`) which transform per-pixel channels into a final color.
 
 If you wish to use [`tinycudann`](https://github.com/nvlabs/tiny-cuda-nn), you can optionally install it with `uv sync --extra tcnn` and enable it with `--tcnn`.
-it
 
 ### Depth Map Rendering
 You can render depth maps with `--render_depth`.
