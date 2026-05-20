@@ -112,6 +112,7 @@ python render.py -m $OUTPUT_DIR
 python metrics.py -m $OUTPUT_DIR
 python measure_fps.py -m $OUTPUT_DIR
 ```
+
 The `run.sh` utility chains all steps and takes the output directory as its first argument, e.g.
 ```bash
 bash run.sh $OUTPUT_DIR -s $SCENE_DIR -r $DOWNSAMPLING_LEVEL
@@ -122,10 +123,10 @@ The viewer can also be enabled during training with the `--viewer` flag.
 This section clarifies technical details and additional features.
 
 ### Memory Use
-We use per-pixel linked lists to store intersected Gaussians and data for the backward pass. You can control their size with the flags `--ppll_forward_size` and `--ppll_backward_size`. You might need to increase the defaults for your own scenes, or you might be able to reduce them. Running the standard scenes requires 24GB of VRAM.
+We use per-pixel linked lists to store intersected Gaussians and data for the backward pass. You can control their size with the flags `--ppll_forward_size` and `--ppll_backward_size`. You might need to increase the defaults for your own scenes, or you might be able to reduce them. Running the standard scenes with the current settings requires 24GB of VRAM.
 
 ### PyTorch Integration
-While most code is CUDA-side, including the loss computation and optimizer step, nearly all memory is allocated in tensors and exposed to PyTorch via [pybind](https://github.com/pybind/pybind11). As such, nearly all configuration can be adjusted via the command line without recompiling, and many intermediate results can be inspected in Python for debugging.
+While most code is CUDA-side, including the loss computation and optimizer step, nearly all memory is allocated in tensors and exposed to PyTorch via [pybind](https://github.com/pybind/pybind11). As such, most configuration can be adjusted via the command line without recompiling, and many intermediate results can be inspected in Python for debugging.
 
 The main ray tracer's CUDA module exposes objects that group relevant data tensors. For instance, the camera can be inspected with
 ```python
