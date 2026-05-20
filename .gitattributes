@@ -1,0 +1,2 @@
+# Keep shell scripts Unix-formatted so they run correctly under Bash on Windows checkouts.
+*.sh text eol=lf
