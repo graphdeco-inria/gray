@@ -1,33 +1,27 @@
-__pycache__
 
-.aim/
-.ruff_cache/
+.venv
+.envrc
 
-*.pyc
-/output/
-/build/
-/screenshots/
-/data/
-/tmp*/
-/eval/
-/out/
-/out_*/
-/TODO.md
-/.envrc
+/build*
+/data*
+
+/tmp*
+/out*
+
+/results*
+/artifacts*
+/screenshots*
+/videos*
+/TODO*.md
+
 *.ignore.*
 *.ignore
 *.out
-/tests/output
-/artifacts
-.pytest_cache/
-.venv
-.worktrees
-/results
-/tmp*
 
-# tmp
-*.pdf
-*.csv
-linux_biolinum
-videos/
-vram_*
+/tests/output*
+
+__pycache__
+.ruff_cache
+*.pyc
+.pytest_cache
+.worktrees
