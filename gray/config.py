@@ -47,7 +47,7 @@ class RaytracerConfig:
     ppll_backward_size: int = 120_000_000
 
     # * Background color
-    bg_color: Optional[List[float]] = field(default_factory=lambda: [0.0, 0.0, 0.0])
+    bg_color: List[float] = field(default_factory=lambda: [0.0, 0.0, 0.0])
 
     # * Raytracing quality
     exp_power: float = 2.0
@@ -143,6 +143,8 @@ class RaytracerConfig:
             assert not self.post_mlp, "Spherical harmonics cannot be used with post-MLP"
         if not self.sh:
             self.sh_max_degree = 0
+
+        assert len(self.bg_color) == 3, "bg_color must contain exactly 3 channels"
 
 
 @dataclass

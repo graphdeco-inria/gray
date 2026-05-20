@@ -48,7 +48,7 @@ if scene.test_cameras:
 
 # *** Init gaussians and raytracer
 raytracer = Raytracer.from_point_cloud(
-    cfg, scene.point_cloud, cam0.image_width, cam0.image_height, scene.bg_color
+    cfg, scene.point_cloud, cam0.image_width, cam0.image_height
 )
 if cfg.exposure_comp_enabled:
     raytracer.init_exposure_comp(scene.train_cameras)

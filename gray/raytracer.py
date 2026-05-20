@@ -29,7 +29,6 @@ class Raytracer(torch.nn.Module):
         num_points: int,
         image_width: int,
         image_height: int,
-        bg_color: Optional[Tuple[float, float, float]] = None,
     ):
         "Note that you should call `from_ply` or `from_point_cloud` to initialize the raytracer with actual data."
         super().__init__()
@@ -52,12 +51,7 @@ class Raytracer(torch.nn.Module):
         )
 
         # * Decide background color
-        if cfg.bg_color is not None:
-            self.bg_color = torch.tensor(cfg.bg_color)
-        elif bg_color is not None:
-            self.bg_color = torch.tensor(bg_color)
-        else:
-            self.bg_color = torch.tensor([0.0, 0.0, 0.0])
+        self.bg_color = torch.tensor(cfg.bg_color)
 
         # * Setup config
         config = self.cuda_module.get_config()
@@ -175,7 +169,6 @@ class Raytracer(torch.nn.Module):
         point_cloud: BasicPointCloud,
         image_width: int,
         image_height: int,
-        bg_color: Optional[Tuple[float, float, float]] = None,
     ):
         print(f"Initializing {point_cloud.points.shape[0]} points")
         if cfg.init_binning:
@@ -216,7 +209,7 @@ class Raytracer(torch.nn.Module):
         num_points = point_cloud.points.shape[0]
         num_orig_points = num_points
 
-        raytracer = Raytracer(cfg, num_points, image_width, image_height, bg_color)
+        raytracer = Raytracer(cfg, num_points, image_width, image_height)
         gaussians = raytracer.cuda_module.get_gaussians()
 
         rotation = torch.tensor([[1.0, 0.0, 0.0, 0.0]]).repeat(num_points, 1)
@@ -335,11 +328,11 @@ class Raytracer(torch.nn.Module):
         del state_dict["image_width"]
         del state_dict["image_height"]
 
-        bg_color = state_dict["bg_color"].tolist()
-        del state_dict["bg_color"]
+        # * Older checkpoints may include bg_color, but config is now the source of truth.
+        state_dict.pop("bg_color", None)
 
         num_points = state_dict["mean"].shape[0]
-        raytracer = Raytracer(cfg, num_points, image_width, image_height, bg_color)
+        raytracer = Raytracer(cfg, num_points, image_width, image_height)
         gaussians = raytracer.cuda_module.get_gaussians()
         gaussians.mean.copy_(state_dict["mean"])
         gaussians.rotation.copy_(state_dict["rotation"])
@@ -380,7 +373,6 @@ class Raytracer(torch.nn.Module):
             "current_sh_degree": gaussians.current_sh_degree,
             "image_width": torch.tensor(self.image_width),
             "image_height": torch.tensor(self.image_height),
-            "bg_color": self.bg_color,
         }
 
         path = os.path.join(model_path, f"gaussians_{iteration:05d}.safetensors")
