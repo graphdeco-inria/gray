@@ -180,7 +180,7 @@ class CameraInfo:
             fov_x = focal2fov(focal_length_x, width)
         else:
             assert False, (
-                "Colmap camera model not handled: only undistorted datasets (PINHOLE or SIMPLE_PINHOLE cameras) supported!"
+                "Colmap camera model not handled: only undistorted cameras (PINHOLE or SIMPLE_PINHOLE cameras) supported!"
             )
 
         # * Get image path and name
