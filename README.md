@@ -22,13 +22,14 @@ Windows support using WSL is preliminary, please report any issues.
 
 ## Viewing Pretrained Models
 
-The pretrained models are [available online](https://repo-sam.inria.fr/nerphys/gray/pretrained.html). You can open them in the interactive viewer with
+The pretrained models are [available online](https://repo-sam.inria.fr/nerphys/gray/pretrained.html) and can be downloaded in batch with `bash scripts/download_all_pretrained_scenes.sh`. You can open them in the interactive viewer with
 
 ```bash
-MODEL_DIR
-python view.py -m <model_dir>
+MODEL_DIR=output/pretrained/bicycle
+
+python view.py -m $MODEL_DIR
 ```
-for example, `python view.py -m output/pretrained/bicycle`.
+
 
 ## Easy Setup
     
@@ -58,7 +59,7 @@ This section explains how to run scenes step-by-step. You can skip it if you fol
 
 ### 1. Download Scenes
 
-You can download the [MipNerf360](https://jonbarron.info/mipnerf360/), [Tanks and Temples](https://www.tanksandtemples.org/), and [Deep Blending](https://github.com/Phog/DeepBlending) datasets with
+You can download the [MipNerf360](https://jonbarron.info/mipnerf360/), [Tanks and Temples](https://www.tanksandtemples.org/), and [Deep Blending](https://github.com/Phog/DeepBlending) datasets used for benchmarking with
 
 ```bash 
 bash scripts/download_all_datasets.sh
