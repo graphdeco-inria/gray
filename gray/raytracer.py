@@ -340,7 +340,7 @@ class Raytracer(torch.nn.Module):
         gaussians.opacity.copy_(state_dict["opacity"])
         gaussians.channels.copy_(state_dict["channels"])
         gaussians.sh_coeffs_dc.copy_(state_dict["sh_coeffs_dc"])
-        if config.sh:
+        if cfg.sh:
             gaussians.sh_coeffs_rest.copy_(state_dict["sh_coeffs_rest"])
         gaussians.current_sh_degree.copy_(state_dict["current_sh_degree"])
         raytracer.cuda_module.rebuild_bvh()
