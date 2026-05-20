@@ -31,7 +31,6 @@ class SceneInfo:
     test_images: List[torch.Tensor]
     pc_path: str
     is_nerf_synthetic: bool
-    bg_color: Tuple[float, float, float] = (0.0, 0.0, 0.0)
 
     @staticmethod
     def from_colmap(cfg: Config, llffhold=8, parse_point_cloud=True) -> SceneInfo:
@@ -131,10 +130,6 @@ class SceneInfo:
         train_images = dict(train_futures)
         test_images = dict(test_futures)
 
-        # * Compute background color as the average color of all training images
-        all_colors = torch.cat([img.reshape(3, -1) for img in train_images.values()], dim=1)
-        bg_color = tuple(all_colors.mean(dim=1).cpu().numpy().tolist())
-
         return SceneInfo(
             point_cloud=pcd,
             train_cameras=train_cam_infos,
@@ -143,7 +138,6 @@ class SceneInfo:
             test_images=test_images,
             pc_path=pc_path,
             is_nerf_synthetic=False,
-            bg_color=bg_color,
         )
 
 
@@ -180,7 +174,7 @@ class CameraInfo:
             fov_x = focal2fov(focal_length_x, width)
         else:
             assert False, (
-                "Colmap camera model not handled: only undistorted cameras (PINHOLE or SIMPLE_PINHOLE cameras) supported!"
+                "Colmap camera model not handled: only undistorted camera (PINHOLE or SIMPLE_PINHOLE cameras) supported!"
             )
 
         # * Get image path and name
