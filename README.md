@@ -12,7 +12,7 @@ Using the [`uv`](https://github.com/astral-sh/uv) package manager (installable w
 ```bash
 git submodule update --init --recursive   # pull submodules
 bash install.sh                           # create environment & install dependencies
-source .venv/bin/activate                 # activate environment
+source .venv/*/activate                   # activate environment
 bash ./make.sh                            # compile the cuda raytracer into `build/`
 ```
 
@@ -29,7 +29,6 @@ MODEL_DIR=output/pretrained/bicycle
 
 python view.py -m $MODEL_DIR
 ```
-
 
 ## Easy Setup
     
