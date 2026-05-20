@@ -6,26 +6,31 @@ from typing import Annotated, List, Optional, Literal
 
 @dataclass
 class DatasetConfig:
-    source_path: Annotated[str, arg(aliases=["-s"])]
-    model_path: Annotated[str, arg(aliases=["-m"])]
+    source_path: Annotated[str, arg(aliases=["-s"])]  
+    model_path: Annotated[str, arg(aliases=["-m"])]  
+
     downsampling: Annotated[str, arg(aliases=["-r"])] = 1  # * Integer downsampling factor
-    images_dir: Annotated[str, arg(aliases=["-i"])] = "images_{downsampling}"
-    point_cloud_file: Annotated[str, arg(aliases=["-p"])] = "point_cloud.safetensors"
-    eval: bool = False
+    images_dir: Annotated[str, arg(aliases=["-i"])] = "images_{downsampling}" # * Relative to source_path or absolute
+    
+    point_cloud_file: Annotated[str, arg(aliases=["-p"])] = "point_cloud.safetensors" # * Relative to source_path or absolute
+    
+    eval: bool = False  
 
     def __post_init__(self):
-        # * Allow formatting of paths with prior setting values
-        self.images_dir = self.images_dir.format(downsampling=self.downsampling)
+        # * Allow using other settings when specifying paths e.g. {downsampling} in images_dir
+        self.images_dir = self.images_dir.format(
+            downsampling=self.downsampling, source_path=self.source_path
+        )
         self.point_cloud_file = self.point_cloud_file.format(
-            downsampling=self.downsampling, images_dir=self.images_dir
+            downsampling=self.downsampling, source_path=self.source_path, images_dir=self.images_dir
         )
 
 
 @dataclass
 class RaytracerConfig:
     # * Render settings
-    render_depth: bool = False
-    preview_train_image_name: Optional[str] = None
+    render_depth: bool = False  
+    preview_train_image_name: Optional[str] = None 
     preview_test_image_name: Optional[str] = None
 
     # * Logging
@@ -34,19 +39,17 @@ class RaytracerConfig:
     save_iters: List[int] = field(default_factory=lambda: [7_500, 15_000])
     log_loss_interval: int = 1000
     log_stats_interval: int = 1000
-    viewer: bool = False
-    yes: Annotated[bool, arg(aliases=["-y"])] = (
-        False  # * allows overwriting existing directories without prompt
-    )
+    viewer: bool = False  # * Open the viewer during training
+    yes: Annotated[bool, arg(aliases=["-y"])] = # * Allows overwriting existing directories without prompt
 
-    # * Raytracer main settings
+    # * Memory use 
     ppll_forward_size: int = 300_000_000
     ppll_backward_size: int = 120_000_000
 
-    # * Background settings
+    # * Background color
     bg_color: Optional[List[float]] = field(default_factory=lambda: [0.0, 0.0, 0.0])
 
-    # * Raytracing quality settings
+    # * Raytracing quality
     exp_power: float = 2.0
     alpha_threshold: float = 0.01
     t_threshold: float = 0.03
@@ -55,9 +58,7 @@ class RaytracerConfig:
     init_scale: float = 0.0005  # * Higher values may work better at low resolution
     init_opacity: float = 0.1
     init_binning: bool = True
-    init_bin_size: float = (
-        0.0015  # * Post-fix default; tuned to roughly match old 0.04 behavior on MipNeRF360
-    )
+    init_bin_size: float =  0.0015  # * Post-bugfix default; tuned to roughly match old behavior at 0.04
 
     # * Loss
     lambda_ssim: float = 0.2
@@ -76,13 +77,11 @@ class RaytracerConfig:
     lr_sh_dc_init: float = 0.04
     lr_sh_dc_final: float = 0.0025
     lr_sh_rest: float = 0.000625
-    tiling: int = 1  # * If >1, will use random crops of size (H/tiling, W/tiling) for training
+    tiling: int = 1  # * Legacy setting retained for backwards compatibility
     beta_1: float = 0.9
     beta_2: float = 0.999
     epsilon: float = 1e-15
-    sh_update_laziness: int = (
-        1  # * Only step the SH non-dc coefficients every `sh_update_laziness` iterations
-    )
+    sh_update_laziness: int = 1 # * Only step the SH non-dc coefficients every `sh_update_laziness` iterations
     lr_schedule_delay_mult: float = 0.01
 
     # * Pruning
