@@ -55,7 +55,8 @@ class EDGSCLI:
 
     # * Dataset config
     source_path: Annotated[str, arg(aliases=["-s"])]
-    images_dir: Annotated[str, arg(aliases=["-i"])] = "images_1"
+    downsampling: Annotated[str, arg(aliases=["-r"])] = 1
+    images_dir: Annotated[str, arg(aliases=["-i"])] = "images_{downsampling}"
     point_cloud_file: Annotated[str, arg(aliases=["-p"])] = "point_cloud.safetensors" 
     eval: bool = True # * Exclude test views by default
 
@@ -67,6 +68,17 @@ class EDGSCLI:
     proj_err_tolerance: float = 0.01  # * Projection error tolerance for filtering out bad keypoints.
 
     yes: Annotated[bool, arg(aliases=["-y"])] = False # * If True, allow overwriting existing point cloud files.
+
+    def __post_init__(self):
+        # * Allow using other settings when specifying paths e.g. {downsampling} in images_dir
+        self.images_dir = self.images_dir.format(
+            downsampling=self.downsampling, source_path=self.source_path
+        )
+        self.point_cloud_file = self.point_cloud_file.format(
+            downsampling=self.downsampling,
+            source_path=self.source_path,
+            images_dir=self.images_dir,
+        )
 
 
 def pairwise_distances(matrix):
@@ -878,10 +890,7 @@ def init_gaussians_with_corr(gaussians, scene, cfg, device, verbose=False, roma_
             "colors": all_new_colors.cpu().numpy(),
             "distances_to_cam": all_new_distances.cpu().numpy(),
         },
-        os.path.join(
-            cfg.source_path,
-            cfg.point_cloud_file.format(images_dir=cfg.images_dir)
-        )
+        os.path.join(cfg.source_path, cfg.point_cloud_file)
     )
     print(f"Produced {all_new_xyz.shape[0]} points.")
 
