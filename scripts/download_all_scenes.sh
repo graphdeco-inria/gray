@@ -15,7 +15,7 @@ curl -fL --progress-bar -o data/360_extra_scenes.zip https://storage.googleapis.
 python -m zipfile -e data/360_extra_scenes.zip data/360_v2/
 rm data/360_extra_scenes.zip
 
-curl -fL --progress-bar -o data/tandt_db.zip https://repo-sam.inria.fr/fungraph/3d-gaussian-splatting/scenes/input/tandt_db.zip
+curl -fL --progress-bar -o data/tandt_db.zip https://repo-sam.inria.fr/fungraph/3d-gaussian-splatting/datasets/input/tandt_db.zip
 python -m zipfile -e data/tandt_db.zip data/
 rm data/tandt_db.zip
 
