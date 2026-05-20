@@ -59,10 +59,10 @@ This section explains how to run scenes step-by-step. You can skip it if you fol
 
 ### 1. Download Scenes
 
-You can download the [MipNerf360](https://jonbarron.info/mipnerf360/), [Tanks and Temples](https://www.tanksandtemples.org/), and [Deep Blending](https://github.com/Phog/DeepBlending) datasets used for benchmarking with
+You can download the [MipNerf360](https://jonbarron.info/mipnerf360/), [Tanks and Temples](https://www.tanksandtemples.org/), and [Deep Blending](https://github.com/Phog/DeepBlending) scenes used for benchmarking with
 
 ```bash 
-bash scripts/download_all_datasets.sh
+bash scripts/download_all_scenes.sh
 ```
 This will place them in `data/`; for example, `data/360_v2/bicycle` will contain the files for the MipNeRF 360 bicycle scene.
 
@@ -74,11 +74,11 @@ This codebase expects your images to already be sized to the correct resolution 
 ```bash
 SCENE_DIR=data/360_v2/bicycle
 
-python resize.py -s $SCENE_DIR
+python resize.py -s $SCENE_DIR -y
 ```
-which will downsize your images by factors of 2, 4, and 8 while also limiting their size to max 1600 pixels like 3DGS does. You can resize all benchmarking datasets with
+which will downsize your images by factors of 2, 4, and 8 while also limiting their size to max 1600 pixels like 3DGS does. You can resize all benchmarking scenes with
 ```bash 
-bash scripts/resize_all_datasets.sh
+bash scripts/resize_all_scenes.sh
 ```
 which will produce the subdirectories `images_1` (original size clamped to max 1600 pixels), `images_2` (half resolution), etc.
 
@@ -92,8 +92,12 @@ INDOORS_OR_OUTDOORS=indoors
 
 python third_party/edgs.py -s $SCENE_DIR --roma_model $INDOORS_OR_OUTDOORS
 ```
-Here you must select which type of scene you are dealing with (`indoors` or `outdoors`) to choose the correct [RoMA](https://github.com/Parskatt/RoMa) network used for dense matching.
-The point cloud will be saved to `$SCENE_DIR/point_cloud.safetensors`.
+Here you must select which type of scene you are dealing with (`indoors` or `outdoors`) to choose the correct [RoMA](https://github.com/Parskatt/RoMa) network used for dense matching. The point cloud will be saved to `$SCENE_DIR/point_cloud.safetensors`.
+
+You can create point clouds for all benchmarking scenes with
+```bash 
+bash scripts/create_all_dense_point_clouds.sh
+```
 
 ### 4. Train, Render, and Evaluate
 

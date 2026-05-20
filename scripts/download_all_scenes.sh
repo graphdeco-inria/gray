@@ -3,7 +3,7 @@ set -e
 
 mkdir -p data
 
-echo Downloading datasets to \`data/\`...
+echo Downloading scenes to \`data/\`...
 
 wget -q --show-progress -P data/ http://storage.googleapis.com/gresearch/refraw360/360_v2.zip
 python -m zipfile -e data/360_v2.zip data/360_v2/
@@ -15,11 +15,11 @@ wget  -q --show-progress -P data/ https://storage.googleapis.com/gresearch/refra
 python -m zipfile -e data/360_extra_scenes.zip data/360_v2/
 rm data/360_extra_scenes.zip
 
-wget  -q --show-progress -P data/ https://repo-sam.inria.fr/fungraph/3d-gaussian-splatting/datasets/input/tandt_db.zip 
+wget  -q --show-progress -P data/ https://repo-sam.inria.fr/fungraph/3d-gaussian-splatting/scenes/input/tandt_db.zip 
 python -m zipfile -e data/tandt_db.zip data/
 rm data/tandt_db.zip
 
-echo All datasets downloaded.
+echo All scenes downloaded.
 
 
 
