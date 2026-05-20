@@ -31,18 +31,18 @@ for scene in sorted(os.listdir(cli.directory)):
     # * Read JSON metrics
     with open(results_path, "r") as f:
         data = json.load(f)
+    iter_keys = [key for key in data if isinstance(key, str) and key.isdigit()]
+    if not iter_keys:
+        continue
     if cli.iteration is None:
-        test_path = os.path.join(scene_dir, "test")
-        iter_options = []
-        for item in os.listdir(test_path):
-            if item.isdigit():
-                iter_options.append(int(item))
-        if not iter_options:
-            continue
-        target_iter_str = f"{max(iter_options):05d}"
+        target_iter_str = max(iter_keys, key=lambda key: int(key))
     else:
-        target_iter_str = str(cli.iteration)
-        if target_iter_str not in data:
+        target_iter_str = None
+        for key in iter_keys:
+            if int(key) == cli.iteration:
+                target_iter_str = key
+                break
+        if target_iter_str is None:
             continue
     iter_data = data[target_iter_str]
     if "PSNR" not in iter_data or "SSIM" not in iter_data or "LPIPS" not in iter_data:

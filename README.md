@@ -163,7 +163,7 @@ We fixed a minor bug in how the bin size was computed for initialization binning
 ## Troubleshooting
 Please report any problems you encounter with installation in the GitHub issues.
 
-If you scene is very large, you might get better results by disabling initialization binning with `--no_init_binning`.
+If your scene is very large, you might get better results by disabling initialization binning with `--no_init_binning`.
 
 This code was designed for scenes with around 200-300 images and pinhole cameras; we are working on support for larger scenes. Alternative camera models are not currently provided but should be straightforward to implement.
 
