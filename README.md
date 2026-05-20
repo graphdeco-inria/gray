@@ -52,6 +52,12 @@ python collect_results.py output/
 ```
 to collect all metrics in a table. 
 
+Here are the expected results from the latest version of the code:
+
+| PSNR | SSIM | LPIPS | Time | FPS |
+| ---: | ---: | ---: | ---: | ---: |
+| 26.45 | 0.818 | 0.238 | 05:30 | 250 |
+
 ## Step-by-Step Workflow
 
 This section explains how to run scenes step-by-step. You can skip it if you followed the automated reproduction steps above.
