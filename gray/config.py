@@ -40,7 +40,7 @@ class RaytracerConfig:
     log_loss_interval: int = 1000
     log_stats_interval: int = 1000
     viewer: bool = False  # * Open the viewer during training
-    yes: Annotated[bool, arg(aliases=["-y"])] = # * Allows overwriting existing directories without prompt
+    yes: Annotated[bool, arg(aliases=["-y"])] = False # * Allows overwriting existing directories without prompt
 
     # * Memory use 
     ppll_forward_size: int = 300_000_000
