@@ -1,11 +1,11 @@
 
 # GRay: Ray Tracing 3D Gaussians Near the Speed of Splats
-
 Yohan Poirier-Ginter, Jean-François Lalonde, George Drettakis
 
 [Website](https://repo-sam.inria.fr/nerphys/gray/) | [Paper](https://repo-sam.inria.fr/nerphys/gray/contents/paper.pdf) | [Video](https://www.youtube.com/watch?v=ei-9wyzlaho) | [NERPHYS](https://project.inria.fr/nerphys/) | [Pretrained Models](https://repo-sam.inria.fr/nerphys/gray/pretrained.html) 
 
 GRay is a fast ray tracer for 3D Gaussians that can be used as a ray-tracing-based alternative to [3DGS](https://github.com/graphdeco-inria/gaussian-splatting), much like [3DGRT](https://github.com/nv-tlabs/3dgrut). By leveraging [dense initialization](https://github.com/CompVis/EDGS) and other techniques including methods developped in our [previous project](https://repo-sam.inria.fr/nerphys/editable-gaussian-reflections/), GRay optimizes nearly 10× faster than 3DGRT on an RTX 4090.
+
 
 ## Installation
 Using the [`uv`](https://github.com/astral-sh/uv) package manager (installable with `curl -LsSf https://astral.sh/uv/install.sh | sh`), run
@@ -20,8 +20,8 @@ This codebase requires a graphics card supporting OptiX 8 and a local CUDA toolk
 
 Windows support using WSL is preliminary, please report any issues.
 
-## Viewing Pretrained Models
 
+## Viewing Pretrained Models
 The pretrained models are [available online](https://repo-sam.inria.fr/nerphys/gray/pretrained.html) and can be downloaded in batch with `bash scripts/download_all_pretrained_scenes.sh`. You can open them in the interactive viewer with
 
 ```bash
@@ -30,8 +30,8 @@ MODEL_DIR=output/pretrained/bicycle
 python view.py -m $MODEL_DIR
 ```
 
+
 ## Easy Setup
-    
 This section explains how to easily reproduce the results from our paper.
 
 First, run
@@ -58,12 +58,11 @@ Here are the expected results from the latest version of the code:
 | ---: | ---: | ---: | ---: | ---: |
 | 26.45 | 0.818 | 0.238 | 05:30 | 250 |
 
-## Step-by-Step Workflow
 
+## Step-by-Step Workflow
 This section explains how to run scenes step-by-step. You can skip it if you followed the automated reproduction steps above.
 
 ### 1. Download Scenes
-
 You can download the [MipNerf360](https://jonbarron.info/mipnerf360/), [Tanks and Temples](https://www.tanksandtemples.org/), and [Deep Blending](https://github.com/Phog/DeepBlending) scenes used for benchmarking with
 
 ```bash 
@@ -74,7 +73,6 @@ This will place them in `data/`; for example, `data/360_v2/bicycle` will contain
 You can also use any COLMAP scene or create your own with the provided `convert.py` utility. Its usage is explained in the [3DGS repository](https://github.com/graphdeco-inria/gaussian-splatting).
 
 ### 2. Resize Images
-
 This codebase expects your images to already be sized to the correct resolution in `.png`. Resizing can be done with the preprocessing script
 ```bash
 SCENE_DIR=data/360_v2/bicycle
@@ -88,7 +86,6 @@ bash scripts/resize_all_scenes.sh
 which will produce the subdirectories `images_1` (original size clamped to max 1600 pixels), `images_2` (half resolution), etc.
 
 ### 3. Create the Dense Initialization Point Cloud
-
 This project uses [dense initialization](https://github.com/CompVis/EDGS) for its initial point cloud. You can create these point clouds for any scene with:
 
 ```bash
@@ -105,7 +102,6 @@ bash scripts/create_all_dense_point_clouds.sh
 ```
 
 ### 4. Train, Render, and Evaluate
-
 The configuration is mostly unchanged from 3DGS, with some minor differences.
 Run a full training and evaluation pass with:
 ```bash
@@ -124,6 +120,7 @@ The `run.sh` utility chains all steps and takes the output directory as its firs
 bash run.sh $OUTPUT_DIR -s $SCENE_DIR -r $DOWNSAMPLING_LEVEL
 ```
 The viewer can also be enabled during training with the `--viewer` flag.
+
 
 ## Details
 This section clarifies technical details and additional features.
@@ -166,6 +163,7 @@ You can render depth maps with `--render_depth`.
 ### Bugfixes
 We fixed a minor bug in how the bin size was computed for initialization binning. As such, the default value for `init_bin_size` differs from the value reported in the paper and quantitative results may differ by negligible amounts (< 0.1 dB).
 
+
 ## Troubleshooting
 Please report any problems you encounter with installation in the GitHub issues.
 
@@ -174,6 +172,7 @@ If your scene is very large, you might get better results by disabling initializ
 This code was designed for scenes with around 200-300 images and pinhole cameras; we are working on support for larger scenes. Alternative camera models are not currently provided but should be straightforward to implement.
 
 You will likely encounter floaters which are a known limitation of dense initialization.
+
 
 ## License
 The original code in this repository is licensed under the MIT License.
@@ -187,7 +186,6 @@ This includes, but is not limited to:
 
 
 ## BibTeX
-
 ```
 @article{poirierginter2026gray,
     author = {Poirier-Ginter, Yohan and Lalonde, Jean-Fran\c{c}ois and Drettakis, George},
@@ -206,6 +204,7 @@ This includes, but is not limited to:
     numpages = {19}
 }
 ```
+
 
 ## Acknowledgments
 Thanks to [Jeffrey Hu](https://jefequien.github.io/) for helping with the code and pointing us towards dense initialization.
