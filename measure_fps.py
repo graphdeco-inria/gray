@@ -73,7 +73,8 @@ for i, cam in enumerate(cameras):
 
             ssim_score = fused_ssim(render_unclamped[None].clamp(0), target[None].clamp(0))
             loss = (1.0 - cfg.lambda_ssim) * loss + cfg.lambda_ssim * (1.0 - ssim_score)
-        raytracer.backward_and_step(loss)
+        raytracer.backward(loss)
+        raytracer.step()
     else:
         with torch.no_grad():
             raytracer(cam)
