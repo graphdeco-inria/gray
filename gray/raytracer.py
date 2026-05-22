@@ -213,15 +213,12 @@ class Raytracer(torch.nn.Module):
         gaussians = raytracer.cuda_module.get_gaussians()
 
         rotation = torch.tensor([[1.0, 0.0, 0.0, 0.0]]).repeat(num_points, 1)
-        if point_cloud.distances_to_cam is None:
-            scale = torch.log(torch.ones_like(gaussians.mean) * cfg.init_scale * point_cloud.radius)
-        else:
-            scale = (
-                torch.from_numpy(point_cloud.distances_to_cam * cfg.init_scale)
-                .cuda()
-                .unsqueeze(1)
-                .log()
-            )
+        scale = (
+            torch.from_numpy(point_cloud.distances_to_cam * cfg.init_scale)
+            .cuda()
+            .unsqueeze(1)
+            .log()
+        )
         mean = torch.from_numpy(point_cloud.points).cuda()
         opacity = torch.logit(cfg.init_opacity * torch.ones(num_points, 1))
         channels = torch.cat(
