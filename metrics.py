@@ -20,7 +20,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 with warnings.catch_warnings():
     warnings.simplefilter("ignore")
-    lpips = LPIPS()
+    lpips = LPIPS().cuda()
 
 
 @dataclass
