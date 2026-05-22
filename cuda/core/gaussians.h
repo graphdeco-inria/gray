@@ -143,8 +143,8 @@ struct GaussianDataHolder : torch::CustomClassHolder {
 
     void resize(int64_t num_new_gaussians) {
         if (count > 1) {
-            TORCH_CHECK(num_new_gaussians < count,
-                        "The new number of Gaussians must be smaller than the current count.");
+            TORCH_CHECK(num_new_gaussians <= count,
+                        "The new number of Gaussians must not be larger than the current count.");
         }
 
         torch::NoGradGuard no_grad;
