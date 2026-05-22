@@ -221,8 +221,8 @@ while iteration < cfg.iterations + 1:
             gaussians.lr_rotation.fill_(schedule_rotation(iteration - 1))
         if cfg.lr_scale_final != cfg.lr_scale_init:
             gaussians.lr_scale.fill_(schedule_scale(iteration - 1))
-        if cfg.lr_scale_final != cfg.lr_scale_init:
-            gaussians.lr_opacity.fill_(schedule_scale(iteration - 1))
+        if cfg.lr_opacity_final != cfg.lr_opacity_init:
+            gaussians.lr_opacity.fill_(schedule_opacity(iteration - 1))
         if cfg.lr_sh_dc_final != cfg.lr_sh_dc_init:
             gaussians.lr_sh_dc.fill_(schedule_dc(iteration - 1))
         if cfg.exposure_comp_enabled:

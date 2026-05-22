@@ -68,8 +68,8 @@ class RaytracerConfig:
     lr_mean_init: float = 0.00016
     lr_mean_final: float = 0.0000016
     lr_channels: float = 0.0025  # * Only used when SH are disabled
-    lr_opacity_init: float = 0.025
-    lr_opacity_final: float = 0.025
+    lr_opacity_init: float = 0.02
+    lr_opacity_final: float = 0.005
     lr_scale_init: float = 0.02
     lr_scale_final: float = 0.005
     lr_rotation_init: float = 0.004
