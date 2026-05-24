@@ -2,7 +2,7 @@
 # GRay: Ray Tracing 3D Gaussians Near the Speed of Splats
 Yohan Poirier-Ginter, Jean-François Lalonde, George Drettakis
 
-[Website](https://repo-sam.inria.fr/nerphys/gray/) | [Paper](https://repo-sam.inria.fr/nerphys/gray/contents/paper.pdf) | [Video](https://www.youtube.com/watch?v=ei-9wyzlaho) | [NERPHYS](https://project.inria.fr/nerphys/) | [Pretrained Models](https://repo-sam.inria.fr/nerphys/gray/pretrained.html) 
+[Website](https://repo-sam.inria.fr/nerphys/gray/) | [Paper](https://repo-sam.inria.fr/nerphys/gray/content/paper.pdf) | [Video](https://www.youtube.com/watch?v=ei-9wyzlaho) | [NERPHYS](https://project.inria.fr/nerphys/) | [Pretrained Models](https://repo-sam.inria.fr/nerphys/gray/pretrained.html) 
 
 GRay is a fast ray tracer for 3D Gaussians that can be used as a ray-tracing-based alternative to [3DGS](https://github.com/graphdeco-inria/gaussian-splatting), much like [3DGRT](https://github.com/nv-tlabs/3dgrut). By leveraging [dense initialization](https://github.com/CompVis/EDGS) and other techniques including methods developped in our [previous project](https://repo-sam.inria.fr/nerphys/editable-gaussian-reflections/), GRay optimizes nearly 10× faster than 3DGRT on an RTX 4090.
 
