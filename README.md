@@ -143,7 +143,7 @@ Note that the backward pass relies on the data from the forward pass staying unm
 Preset configurations are available: adding the flag `-c configs/lq.json` selects a lower level of quality, and the flag `-c configs/hq.json` selects a high level of quality. The default quality level is `mq` (medium quality). The hyperparameters used are detailed in the paper.
 
 ### Compatibility with 3DGS
-The gaussians produced by this method are incompatible with 3DGS; in theory, the differences could be resolved although this was not verified in practice yet (refer to the paper for a short discussion). The file format was changed to `.safetensors` which is simpler and faster. Methods are also provided to save/load in 3DGS's `.ply` format.
+The gaussians produced by this method are incompatible with 3DGS; in theory, the differences could be resolved by modifying both methods (refer to the paper for a short discussion on page 14), but this has not been done in practice. The file format was changed to `.safetensors` which is simpler and faster.
 
 ### Evaluation
 Metric computation was moved to the [PIQ](https://github.com/photosynthesis-team/piq) library since the LPIPS metric was incorrect in the original 3DGS codebase. PSNRs and SSIM scores were verified to match.
