@@ -18,7 +18,7 @@ bash ./make.sh                            # compile the cuda raytracer into `bui
 
 This codebase requires a graphics card supporting OptiX 8 and a local CUDA toolkit installation exposing `nvcc`.
 
-Windows support using WSL is preliminary, please report any issues.
+We are working on Windows support using WSL. Please report any issues if you attempt working on Windows.
 
 
 ## Viewing Pretrained Models
