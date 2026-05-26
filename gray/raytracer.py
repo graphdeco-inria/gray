@@ -29,6 +29,7 @@ class Raytracer(torch.nn.Module):
         num_points: int,
         image_width: int,
         image_height: int,
+        allocate_training_buffers: bool = True,
     ):
         "Note that you should call `from_ply` or `from_point_cloud` to initialize the raytracer with actual data."
         super().__init__()
@@ -48,6 +49,7 @@ class Raytracer(torch.nn.Module):
             cfg.sh_max_degree,
             cfg.ppll_forward_size,
             cfg.ppll_backward_size,
+            allocate_training_buffers,
         )
 
         # * Decide background color
@@ -174,6 +176,7 @@ class Raytracer(torch.nn.Module):
         point_cloud: BasicPointCloud,
         image_width: int,
         image_height: int,
+        allocate_training_buffers: bool = True,
     ):
         print(f"Initializing {point_cloud.points.shape[0]} points")
         if cfg.init_binning:
@@ -214,7 +217,13 @@ class Raytracer(torch.nn.Module):
         num_points = point_cloud.points.shape[0]
         num_orig_points = num_points
 
-        raytracer = Raytracer(cfg, num_points, image_width, image_height)
+        raytracer = Raytracer(
+            cfg,
+            num_points,
+            image_width,
+            image_height,
+            allocate_training_buffers=allocate_training_buffers,
+        )
         gaussians = raytracer.cuda_module.get_gaussians()
 
         rotation = torch.tensor([[1.0, 0.0, 0.0, 0.0]]).repeat(num_points, 1)
@@ -325,7 +334,13 @@ class Raytracer(torch.nn.Module):
         gaussians.pruning_counter[mask] += 1
 
     @staticmethod
-    def from_safetensors(cfg: RaytracerConfig, path: str, image_width: int, image_height: int):
+    def from_safetensors(
+        cfg: RaytracerConfig,
+        path: str,
+        image_width: int,
+        image_height: int,
+        allocate_training_buffers: bool = True,
+    ):
         state_dict = safetensors.torch.load_file(path)
         del state_dict["image_width"]
         del state_dict["image_height"]
@@ -334,7 +349,13 @@ class Raytracer(torch.nn.Module):
         state_dict.pop("bg_color", None)
 
         num_points = state_dict["mean"].shape[0]
-        raytracer = Raytracer(cfg, num_points, image_width, image_height)
+        raytracer = Raytracer(
+            cfg,
+            num_points,
+            image_width,
+            image_height,
+            allocate_training_buffers=allocate_training_buffers,
+        )
         gaussians = raytracer.cuda_module.get_gaussians()
         gaussians.mean.copy_(state_dict["mean"])
         gaussians.rotation.copy_(state_dict["rotation"])
@@ -381,7 +402,13 @@ class Raytracer(torch.nn.Module):
         safetensors.torch.save_file({**self.state_dict(), **tensors}, path)
 
     @staticmethod
-    def from_ply(cfg: RaytracerConfig, path: str, image_width: int, image_height: int):
+    def from_ply(
+        cfg: RaytracerConfig,
+        path: str,
+        image_width: int,
+        image_height: int,
+        allocate_training_buffers: bool = True,
+    ):
         plydata = PlyData.read(path)
         vertex = plydata["vertex"].data
 
@@ -394,7 +421,13 @@ class Raytracer(torch.nn.Module):
             np.float32
         )
 
-        raytracer = Raytracer(cfg, points.shape[0], image_width, image_height)
+        raytracer = Raytracer(
+            cfg,
+            points.shape[0],
+            image_width,
+            image_height,
+            allocate_training_buffers=allocate_training_buffers,
+        )
         gaussians = raytracer.cuda_module.get_gaussians()
         gaussians.mean.copy_(torch.from_numpy(points))
         gaussians.opacity.copy_(torch.from_numpy(opacities))

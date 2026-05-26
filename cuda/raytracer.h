@@ -41,20 +41,23 @@ struct Raytracer : torch::CustomClassHolder {
     c10::intrusive_ptr<StatsDataHolder> stats_data;
     c10::intrusive_ptr<PPLLDataHolder> ppll_forward_data;
     c10::intrusive_ptr<PPLLDataHolder> ppll_backward_data;
+    bool training_buffers_enabled;
 
     std::unique_ptr<PipelineWrapper> pipeline_wrapper;
     std::unique_ptr<BVHWrapper> bvh_wrapper;
 
-    Raytracer(int64_t width_, int64_t height_, int64_t num_gaussians, int64_t sh_max_degree, int64_t ppll_forward_size,
-              int64_t ppll_backward_size)
+        Raytracer(int64_t width_, int64_t height_, int64_t num_gaussians, int64_t sh_max_degree,
+                            int64_t ppll_forward_size, int64_t ppll_backward_size, bool training_buffers_enabled_ = true)
         : width(width_), height(height_), camera_data(c10::make_intrusive<CameraDataHolder>()),
           config_data(c10::make_intrusive<ConfigDataHolder>()),
           framebuffer_data(c10::make_intrusive<FramebufferDataHolder>(width, height)),
-          gaussian_data(c10::make_intrusive<GaussianDataHolder>(sh_max_degree)),
+                    gaussian_data(c10::make_intrusive<GaussianDataHolder>(sh_max_degree, training_buffers_enabled_)),
           meta_data(c10::make_intrusive<MetaDataHolder>(width, height)),
           stats_data(c10::make_intrusive<StatsDataHolder>(width, height)),
           ppll_forward_data(c10::make_intrusive<PPLLDataHolder>("forward\0", width, height, ppll_forward_size)),
-          ppll_backward_data(c10::make_intrusive<PPLLDataHolder>("backward\0", width, height, ppll_backward_size)) {
+                    ppll_backward_data(c10::make_intrusive<PPLLDataHolder>(
+                            "backward\0", width, height, training_buffers_enabled_ ? ppll_backward_size : 1)),
+                    training_buffers_enabled(training_buffers_enabled_) {
         ppll_forward_data->reset();
         ppll_backward_data->reset();
 
@@ -87,7 +90,6 @@ struct Raytracer : torch::CustomClassHolder {
 
         ppll_forward_data->reset();
         ppll_backward_data->reset();
-
         gaussian_data->was_visible.fill_(false);
 
         if (config_data->enable_sh.item<bool>()) {
@@ -147,7 +149,7 @@ struct Raytracer : torch::CustomClassHolder {
 
     static void bind(torch::Library &m) {
         m.class_<Raytracer>("Raytracer")
-            .def(torch::init<int64_t, int64_t, int64_t, int64_t, int64_t, int64_t>())
+            .def(torch::init<int64_t, int64_t, int64_t, int64_t, int64_t, int64_t, bool>())
             .def("forward_pass", &Raytracer::forward_pass)
             .def("forward_pass_display", &Raytracer::forward_pass_display)
             .def("backward_pass", &Raytracer::backward_pass)

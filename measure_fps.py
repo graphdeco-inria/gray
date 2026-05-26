@@ -41,6 +41,7 @@ raytracer = Raytracer.from_safetensors(
     save_path,
     int((cli.width or cam0.image_width) * (cli.scale or 1.0)),
     int(cli.height or cam0.image_height * (cli.scale or 1.0)),
+    allocate_training_buffers=cli.context == "train",
 )
 
 # * Warmup caches

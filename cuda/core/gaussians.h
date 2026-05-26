@@ -67,6 +67,7 @@ struct GaussianDataHolder : torch::CustomClassHolder {
     int count = 1;
     int max_sh_degree;
     int num_sh_coeffs;
+    bool training_buffers_enabled;
     Tensor current_sh_degree = torch::tensor({0}, CUDA_INT32);
 
     Tensor mean = torch::zeros({1, 3}, CUDA_FLOAT32);
@@ -90,55 +91,103 @@ struct GaussianDataHolder : torch::CustomClassHolder {
     Tensor epsilon = torch::tensor({1e-15}, CUDA_FLOAT32);
     Tensor sh_update_laziness = torch::tensor({1}, CUDA_INT32);
 
-    Tensor grad_mean = torch::zeros({1, 3}, CUDA_FLOAT32);
-    Tensor grad_rotation = torch::zeros({1, 4}, CUDA_FLOAT32);
-    Tensor grad_scale = torch::zeros({1, 3}, CUDA_FLOAT32);
-    Tensor grad_opacity = torch::zeros({1, 1}, CUDA_FLOAT32);
-    Tensor grad_channels = torch::zeros({1, CHANNELS}, CUDA_FLOAT32);
+    Tensor grad_mean;
+    Tensor grad_rotation;
+    Tensor grad_scale;
+    Tensor grad_opacity;
+    Tensor grad_channels;
     Tensor grad_sh_coeffs_dc;
     Tensor grad_sh_coeffs_rest;
 
-    Tensor first_moment_mean = torch::zeros({1, 3}, CUDA_FLOAT32);
-    Tensor first_moment_rotation = torch::zeros({1, 4}, CUDA_FLOAT32);
-    Tensor first_moment_scale = torch::zeros({1, 3}, CUDA_FLOAT32);
-    Tensor first_moment_opacity = torch::zeros({1, 1}, CUDA_FLOAT32);
-    Tensor first_moment_channels = torch::zeros({1, CHANNELS}, CUDA_FLOAT32);
+    Tensor first_moment_mean;
+    Tensor first_moment_rotation;
+    Tensor first_moment_scale;
+    Tensor first_moment_opacity;
+    Tensor first_moment_channels;
     Tensor first_moment_sh_coeffs_dc;
     Tensor first_moment_sh_coeffs_rest;
 
-    Tensor second_moment_mean = torch::zeros({1, 3}, CUDA_FLOAT32);
-    Tensor second_moment_rotation = torch::zeros({1, 4}, CUDA_FLOAT32);
-    Tensor second_moment_scale = torch::zeros({1, 3}, CUDA_FLOAT32);
-    Tensor second_moment_opacity = torch::zeros({1, 1}, CUDA_FLOAT32);
-    Tensor second_moment_channels = torch::zeros({1, CHANNELS}, CUDA_FLOAT32);
+    Tensor second_moment_mean;
+    Tensor second_moment_rotation;
+    Tensor second_moment_scale;
+    Tensor second_moment_opacity;
+    Tensor second_moment_channels;
     Tensor second_moment_sh_coeffs_dc;
     Tensor second_moment_sh_coeffs_rest;
 
-    Tensor pruning_weight = torch::zeros({1, 1}, CUDA_FLOAT32);
-    Tensor pruning_counter = torch::zeros({1, 1}, CUDA_INT32);
+    Tensor pruning_weight;
+    Tensor pruning_counter;
 
-    Tensor was_visible = torch::zeros({1, 1}, CUDA_BOOL);
-    Tensor marked = torch::zeros({1, 1}, CUDA_FLOAT32);
+    Tensor was_visible;
+    Tensor marked;
 
-    GaussianDataHolder(int64_t max_sh_degree)
-        : max_sh_degree(max_sh_degree), num_sh_coeffs((max_sh_degree + 1) * (max_sh_degree + 1) - 1) {
+    GaussianDataHolder(int64_t max_sh_degree, bool training_buffers_enabled_ = true)
+        : max_sh_degree(max_sh_degree), num_sh_coeffs((max_sh_degree + 1) * (max_sh_degree + 1) - 1),
+          training_buffers_enabled(training_buffers_enabled_) {
         int num_sh_coeffs = (max_sh_degree + 1) * (max_sh_degree + 1) - 1;
         sh_coeffs_dc = torch::zeros({1, 1, CHANNELS}, CUDA_FLOAT32);
         sh_coeffs_rest = torch::zeros({1, num_sh_coeffs, CHANNELS}, CUDA_FLOAT32);
-        grad_sh_coeffs_dc = torch::zeros({1, 1, CHANNELS}, CUDA_FLOAT32);
-        grad_sh_coeffs_rest = torch::zeros({1, num_sh_coeffs, CHANNELS}, CUDA_FLOAT32);
-        first_moment_sh_coeffs_dc = torch::zeros({1, 1, CHANNELS}, CUDA_FLOAT32);
-        first_moment_sh_coeffs_rest = torch::zeros({1, num_sh_coeffs, CHANNELS}, CUDA_FLOAT32);
-        second_moment_sh_coeffs_dc = torch::zeros({1, 1, CHANNELS}, CUDA_FLOAT32);
-        second_moment_sh_coeffs_rest = torch::zeros({1, num_sh_coeffs, CHANNELS}, CUDA_FLOAT32);
+        if (training_buffers_enabled) {
+            grad_mean = torch::zeros({1, 3}, CUDA_FLOAT32);
+            grad_rotation = torch::zeros({1, 4}, CUDA_FLOAT32);
+            grad_scale = torch::zeros({1, 3}, CUDA_FLOAT32);
+            grad_opacity = torch::zeros({1, 1}, CUDA_FLOAT32);
+            grad_channels = torch::zeros({1, CHANNELS}, CUDA_FLOAT32);
+            grad_sh_coeffs_dc = torch::zeros({1, 1, CHANNELS}, CUDA_FLOAT32);
+            grad_sh_coeffs_rest = torch::zeros({1, num_sh_coeffs, CHANNELS}, CUDA_FLOAT32);
+            first_moment_mean = torch::zeros({1, 3}, CUDA_FLOAT32);
+            first_moment_rotation = torch::zeros({1, 4}, CUDA_FLOAT32);
+            first_moment_scale = torch::zeros({1, 3}, CUDA_FLOAT32);
+            first_moment_opacity = torch::zeros({1, 1}, CUDA_FLOAT32);
+            first_moment_channels = torch::zeros({1, CHANNELS}, CUDA_FLOAT32);
+            first_moment_sh_coeffs_dc = torch::zeros({1, 1, CHANNELS}, CUDA_FLOAT32);
+            first_moment_sh_coeffs_rest = torch::zeros({1, num_sh_coeffs, CHANNELS}, CUDA_FLOAT32);
+            second_moment_mean = torch::zeros({1, 3}, CUDA_FLOAT32);
+            second_moment_rotation = torch::zeros({1, 4}, CUDA_FLOAT32);
+            second_moment_scale = torch::zeros({1, 3}, CUDA_FLOAT32);
+            second_moment_opacity = torch::zeros({1, 1}, CUDA_FLOAT32);
+            second_moment_channels = torch::zeros({1, CHANNELS}, CUDA_FLOAT32);
+            second_moment_sh_coeffs_dc = torch::zeros({1, 1, CHANNELS}, CUDA_FLOAT32);
+            second_moment_sh_coeffs_rest = torch::zeros({1, num_sh_coeffs, CHANNELS}, CUDA_FLOAT32);
+            pruning_weight = torch::zeros({1, 1}, CUDA_FLOAT32);
+            pruning_counter = torch::zeros({1, 1}, CUDA_INT32);
+            was_visible = torch::zeros({1, 1}, CUDA_BOOL);
+            marked = torch::zeros({1, 1}, CUDA_FLOAT32);
 
-        mean.mutable_grad() = grad_mean;
-        rotation.mutable_grad() = grad_rotation;
-        scale.mutable_grad() = grad_scale;
-        opacity.mutable_grad() = grad_opacity;
-        channels.mutable_grad() = grad_channels;
-        sh_coeffs_dc.mutable_grad() = grad_sh_coeffs_dc;
-        sh_coeffs_rest.mutable_grad() = grad_sh_coeffs_rest;
+            mean.mutable_grad() = grad_mean;
+            rotation.mutable_grad() = grad_rotation;
+            scale.mutable_grad() = grad_scale;
+            opacity.mutable_grad() = grad_opacity;
+            channels.mutable_grad() = grad_channels;
+            sh_coeffs_dc.mutable_grad() = grad_sh_coeffs_dc;
+            sh_coeffs_rest.mutable_grad() = grad_sh_coeffs_rest;
+        } else {
+            grad_mean = torch::zeros({1, 3}, CUDA_FLOAT32);
+            grad_rotation = torch::zeros({1, 4}, CUDA_FLOAT32);
+            grad_scale = torch::zeros({1, 3}, CUDA_FLOAT32);
+            grad_opacity = torch::zeros({1, 1}, CUDA_FLOAT32);
+            grad_channels = torch::zeros({1, CHANNELS}, CUDA_FLOAT32);
+            grad_sh_coeffs_dc = torch::zeros({1, 1, CHANNELS}, CUDA_FLOAT32);
+            grad_sh_coeffs_rest = torch::zeros({1, num_sh_coeffs, CHANNELS}, CUDA_FLOAT32);
+            first_moment_mean = torch::zeros({1, 3}, CUDA_FLOAT32);
+            first_moment_rotation = torch::zeros({1, 4}, CUDA_FLOAT32);
+            first_moment_scale = torch::zeros({1, 3}, CUDA_FLOAT32);
+            first_moment_opacity = torch::zeros({1, 1}, CUDA_FLOAT32);
+            first_moment_channels = torch::zeros({1, CHANNELS}, CUDA_FLOAT32);
+            first_moment_sh_coeffs_dc = torch::zeros({1, 1, CHANNELS}, CUDA_FLOAT32);
+            first_moment_sh_coeffs_rest = torch::zeros({1, num_sh_coeffs, CHANNELS}, CUDA_FLOAT32);
+            second_moment_mean = torch::zeros({1, 3}, CUDA_FLOAT32);
+            second_moment_rotation = torch::zeros({1, 4}, CUDA_FLOAT32);
+            second_moment_scale = torch::zeros({1, 3}, CUDA_FLOAT32);
+            second_moment_opacity = torch::zeros({1, 1}, CUDA_FLOAT32);
+            second_moment_channels = torch::zeros({1, CHANNELS}, CUDA_FLOAT32);
+            second_moment_sh_coeffs_dc = torch::zeros({1, 1, CHANNELS}, CUDA_FLOAT32);
+            second_moment_sh_coeffs_rest = torch::zeros({1, num_sh_coeffs, CHANNELS}, CUDA_FLOAT32);
+            pruning_weight = torch::zeros({1, 1}, CUDA_FLOAT32);
+            pruning_counter = torch::zeros({1, 1}, CUDA_INT32);
+            was_visible = torch::zeros({1, 1}, CUDA_BOOL);
+            marked = torch::zeros({1, 1}, CUDA_FLOAT32);
+        }
     }
 
     void resize(int64_t num_new_gaussians) {
@@ -167,43 +216,45 @@ struct GaussianDataHolder : torch::CustomClassHolder {
         lr_sh_dc.resize_({num_new_gaussians, 1});
         lr_sh_rest.resize_({num_new_gaussians, 1});
 
-        grad_mean.resize_({num_new_gaussians, 3});
-        grad_rotation.resize_({num_new_gaussians, 4});
-        grad_scale.resize_({num_new_gaussians, 3});
-        grad_opacity.resize_({num_new_gaussians, 1});
-        grad_channels.resize_({num_new_gaussians, CHANNELS});
-        grad_sh_coeffs_dc.resize_({num_new_gaussians, 1, CHANNELS});
-        grad_sh_coeffs_rest.resize_({num_new_gaussians, num_sh_coeffs, CHANNELS});
+        if (training_buffers_enabled) {
+            grad_mean.resize_({num_new_gaussians, 3});
+            grad_rotation.resize_({num_new_gaussians, 4});
+            grad_scale.resize_({num_new_gaussians, 3});
+            grad_opacity.resize_({num_new_gaussians, 1});
+            grad_channels.resize_({num_new_gaussians, CHANNELS});
+            grad_sh_coeffs_dc.resize_({num_new_gaussians, 1, CHANNELS});
+            grad_sh_coeffs_rest.resize_({num_new_gaussians, num_sh_coeffs, CHANNELS});
 
-        first_moment_mean.resize_({num_new_gaussians, 3});
-        first_moment_rotation.resize_({num_new_gaussians, 4});
-        first_moment_scale.resize_({num_new_gaussians, 3});
-        first_moment_opacity.resize_({num_new_gaussians, 1});
-        first_moment_channels.resize_({num_new_gaussians, CHANNELS});
-        first_moment_sh_coeffs_dc.resize_({num_new_gaussians, 1, CHANNELS});
-        first_moment_sh_coeffs_rest.resize_({num_new_gaussians, num_sh_coeffs, CHANNELS});
+            first_moment_mean.resize_({num_new_gaussians, 3});
+            first_moment_rotation.resize_({num_new_gaussians, 4});
+            first_moment_scale.resize_({num_new_gaussians, 3});
+            first_moment_opacity.resize_({num_new_gaussians, 1});
+            first_moment_channels.resize_({num_new_gaussians, CHANNELS});
+            first_moment_sh_coeffs_dc.resize_({num_new_gaussians, 1, CHANNELS});
+            first_moment_sh_coeffs_rest.resize_({num_new_gaussians, num_sh_coeffs, CHANNELS});
 
-        second_moment_mean.resize_({num_new_gaussians, 3});
-        second_moment_rotation.resize_({num_new_gaussians, 4});
-        second_moment_scale.resize_({num_new_gaussians, 3});
-        second_moment_opacity.resize_({num_new_gaussians, 1});
-        second_moment_channels.resize_({num_new_gaussians, CHANNELS});
-        second_moment_sh_coeffs_dc.resize_({num_new_gaussians, 1, CHANNELS});
-        second_moment_sh_coeffs_rest.resize_({num_new_gaussians, num_sh_coeffs, CHANNELS});
+            second_moment_mean.resize_({num_new_gaussians, 3});
+            second_moment_rotation.resize_({num_new_gaussians, 4});
+            second_moment_scale.resize_({num_new_gaussians, 3});
+            second_moment_opacity.resize_({num_new_gaussians, 1});
+            second_moment_channels.resize_({num_new_gaussians, CHANNELS});
+            second_moment_sh_coeffs_dc.resize_({num_new_gaussians, 1, CHANNELS});
+            second_moment_sh_coeffs_rest.resize_({num_new_gaussians, num_sh_coeffs, CHANNELS});
 
-        pruning_weight.resize_({num_new_gaussians, 1});
-        pruning_counter.resize_({num_new_gaussians, 1});
+            pruning_weight.resize_({num_new_gaussians, 1});
+            pruning_counter.resize_({num_new_gaussians, 1});
 
-        was_visible.resize_({num_new_gaussians, 1});
-        marked.resize_({num_new_gaussians, 1});
+            was_visible.resize_({num_new_gaussians, 1});
+            marked.resize_({num_new_gaussians, 1});
 
-        mean.mutable_grad() = grad_mean;
-        rotation.mutable_grad() = grad_rotation;
-        scale.mutable_grad() = grad_scale;
-        opacity.mutable_grad() = grad_opacity;
-        channels.mutable_grad() = grad_channels;
-        sh_coeffs_dc.mutable_grad() = grad_sh_coeffs_dc;
-        sh_coeffs_rest.mutable_grad() = grad_sh_coeffs_rest;
+            mean.mutable_grad() = grad_mean;
+            rotation.mutable_grad() = grad_rotation;
+            scale.mutable_grad() = grad_scale;
+            opacity.mutable_grad() = grad_opacity;
+            channels.mutable_grad() = grad_channels;
+            sh_coeffs_dc.mutable_grad() = grad_sh_coeffs_dc;
+            sh_coeffs_rest.mutable_grad() = grad_sh_coeffs_rest;
+        }
     }
 
     Gaussians reify() {
@@ -235,35 +286,62 @@ struct GaussianDataHolder : torch::CustomClassHolder {
         gaussians.epsilon = reinterpret_cast<float *>(epsilon.data_ptr());
         gaussians.sh_update_laziness = reinterpret_cast<int *>(sh_update_laziness.data_ptr());
 
-        gaussians.grad_mean = reinterpret_cast<float3 *>(grad_mean.data_ptr());
-        gaussians.grad_rotation = reinterpret_cast<float4 *>(grad_rotation.data_ptr());
-        gaussians.grad_scale = reinterpret_cast<float3 *>(grad_scale.data_ptr());
-        gaussians.grad_opacity = reinterpret_cast<float *>(grad_opacity.data_ptr());
-        gaussians.grad_channels = reinterpret_cast<floatK *>(grad_channels.data_ptr());
-        gaussians.grad_sh_coeffs_dc = reinterpret_cast<float3 *>(grad_sh_coeffs_dc.data_ptr());
-        gaussians.grad_sh_coeffs_rest = reinterpret_cast<float3 *>(grad_sh_coeffs_rest.data_ptr());
+        gaussians.grad_mean = training_buffers_enabled ? reinterpret_cast<float3 *>(grad_mean.data_ptr()) : nullptr;
+        gaussians.grad_rotation =
+            training_buffers_enabled ? reinterpret_cast<float4 *>(grad_rotation.data_ptr()) : nullptr;
+        gaussians.grad_scale =
+            training_buffers_enabled ? reinterpret_cast<float3 *>(grad_scale.data_ptr()) : nullptr;
+        gaussians.grad_opacity =
+            training_buffers_enabled ? reinterpret_cast<float *>(grad_opacity.data_ptr()) : nullptr;
+        gaussians.grad_channels =
+            training_buffers_enabled ? reinterpret_cast<floatK *>(grad_channels.data_ptr()) : nullptr;
+        gaussians.grad_sh_coeffs_dc =
+            training_buffers_enabled ? reinterpret_cast<float3 *>(grad_sh_coeffs_dc.data_ptr()) : nullptr;
+        gaussians.grad_sh_coeffs_rest =
+            training_buffers_enabled ? reinterpret_cast<float3 *>(grad_sh_coeffs_rest.data_ptr()) : nullptr;
 
-        gaussians.first_moment_mean = reinterpret_cast<float3 *>(first_moment_mean.data_ptr());
-        gaussians.first_moment_rotation = reinterpret_cast<float4 *>(first_moment_rotation.data_ptr());
-        gaussians.first_moment_scale = reinterpret_cast<float3 *>(first_moment_scale.data_ptr());
-        gaussians.first_moment_opacity = reinterpret_cast<float *>(first_moment_opacity.data_ptr());
-        gaussians.first_moment_channels = reinterpret_cast<floatK *>(first_moment_channels.data_ptr());
-        gaussians.first_moment_sh_coeffs_dc = reinterpret_cast<float3 *>(first_moment_sh_coeffs_dc.data_ptr());
-        gaussians.first_moment_sh_coeffs_rest = reinterpret_cast<float3 *>(first_moment_sh_coeffs_rest.data_ptr());
+        gaussians.first_moment_mean =
+            training_buffers_enabled ? reinterpret_cast<float3 *>(first_moment_mean.data_ptr()) : nullptr;
+        gaussians.first_moment_rotation =
+            training_buffers_enabled ? reinterpret_cast<float4 *>(first_moment_rotation.data_ptr()) : nullptr;
+        gaussians.first_moment_scale =
+            training_buffers_enabled ? reinterpret_cast<float3 *>(first_moment_scale.data_ptr()) : nullptr;
+        gaussians.first_moment_opacity =
+            training_buffers_enabled ? reinterpret_cast<float *>(first_moment_opacity.data_ptr()) : nullptr;
+        gaussians.first_moment_channels =
+            training_buffers_enabled ? reinterpret_cast<floatK *>(first_moment_channels.data_ptr()) : nullptr;
+        gaussians.first_moment_sh_coeffs_dc = training_buffers_enabled
+                                                  ? reinterpret_cast<float3 *>(first_moment_sh_coeffs_dc.data_ptr())
+                                                  : nullptr;
+        gaussians.first_moment_sh_coeffs_rest = training_buffers_enabled
+                                                    ? reinterpret_cast<float3 *>(first_moment_sh_coeffs_rest.data_ptr())
+                                                    : nullptr;
 
-        gaussians.second_moment_mean = reinterpret_cast<float3 *>(second_moment_mean.data_ptr());
-        gaussians.second_moment_rotation = reinterpret_cast<float4 *>(second_moment_rotation.data_ptr());
-        gaussians.second_moment_scale = reinterpret_cast<float3 *>(second_moment_scale.data_ptr());
-        gaussians.second_moment_opacity = reinterpret_cast<float *>(second_moment_opacity.data_ptr());
-        gaussians.second_moment_channels = reinterpret_cast<floatK *>(second_moment_channels.data_ptr());
-        gaussians.second_moment_sh_coeffs_dc = reinterpret_cast<float3 *>(second_moment_sh_coeffs_dc.data_ptr());
-        gaussians.second_moment_sh_coeffs_rest = reinterpret_cast<float3 *>(second_moment_sh_coeffs_rest.data_ptr());
+        gaussians.second_moment_mean =
+            training_buffers_enabled ? reinterpret_cast<float3 *>(second_moment_mean.data_ptr()) : nullptr;
+        gaussians.second_moment_rotation =
+            training_buffers_enabled ? reinterpret_cast<float4 *>(second_moment_rotation.data_ptr()) : nullptr;
+        gaussians.second_moment_scale =
+            training_buffers_enabled ? reinterpret_cast<float3 *>(second_moment_scale.data_ptr()) : nullptr;
+        gaussians.second_moment_opacity =
+            training_buffers_enabled ? reinterpret_cast<float *>(second_moment_opacity.data_ptr()) : nullptr;
+        gaussians.second_moment_channels =
+            training_buffers_enabled ? reinterpret_cast<floatK *>(second_moment_channels.data_ptr()) : nullptr;
+        gaussians.second_moment_sh_coeffs_dc = training_buffers_enabled
+                                                   ? reinterpret_cast<float3 *>(second_moment_sh_coeffs_dc.data_ptr())
+                                                   : nullptr;
+        gaussians.second_moment_sh_coeffs_rest = training_buffers_enabled
+                                                     ? reinterpret_cast<float3 *>(second_moment_sh_coeffs_rest.data_ptr())
+                                                     : nullptr;
 
-        gaussians.pruning_weight = reinterpret_cast<float *>(pruning_weight.data_ptr());
-        gaussians.pruning_counter = reinterpret_cast<int *>(pruning_counter.data_ptr());
+        gaussians.pruning_weight =
+            training_buffers_enabled ? reinterpret_cast<float *>(pruning_weight.data_ptr()) : nullptr;
+        gaussians.pruning_counter =
+            training_buffers_enabled ? reinterpret_cast<int *>(pruning_counter.data_ptr()) : nullptr;
 
-        gaussians.was_visible = reinterpret_cast<bool *>(was_visible.data_ptr());
-        gaussians.marked = reinterpret_cast<float *>(marked.data_ptr());
+        gaussians.was_visible =
+            training_buffers_enabled ? reinterpret_cast<bool *>(was_visible.data_ptr()) : nullptr;
+        gaussians.marked = training_buffers_enabled ? reinterpret_cast<float *>(marked.data_ptr()) : nullptr;
 
         return gaussians;
     }

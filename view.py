@@ -356,7 +356,13 @@ if __name__ == "__main__":
         for x in json.load(open(os.path.join(cli.model_path, "cameras.json"), "r"))
     ]
     image_width, image_height = cameras[0].image_width, cameras[0].image_height
-    raytracer = Raytracer.from_safetensors(cfg, save_path, image_width, image_height)
+    raytracer = Raytracer.from_safetensors(
+        cfg,
+        save_path,
+        image_width,
+        image_height,
+        allocate_training_buffers=False,
+    )
     train_cameras = [c for c in cameras if not c.is_test]
     test_cameras = [c for c in cameras if c.is_test]
     viewer = GaussianViewer(raytracer, train_cameras, test_cameras)

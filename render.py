@@ -43,7 +43,11 @@ else:
 scene = SceneInfo.from_colmap(cfg)
 cam0 = scene.train_cameras[0]
 raytracer = Raytracer.from_safetensors(
-    cfg, save_path, cli.width or cam0.image_width, cli.height or cam0.image_height
+    cfg,
+    save_path,
+    cli.width or cam0.image_width,
+    cli.height or cam0.image_height,
+    allocate_training_buffers=False,
 )
 
 # * Render images
