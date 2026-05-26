@@ -85,8 +85,7 @@ extern "C" __global__ void __raygen__rg() {
 
         // *** Forward pass
         Pixel pixel = forward_pass(pixel_id, ray_origin, ray_direction);
-
-        params.framebuffer.write(pixel_id, pixel);
+        params.framebuffer.write(pixel_id, pixel, params.config, params.metadata);
     }
 
     // *** Backward pass
