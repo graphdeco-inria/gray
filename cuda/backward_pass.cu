@@ -69,7 +69,16 @@ __device__ __forceinline__ void backward_pass(const uint32_t pixel_id, const Pix
         // * Transform gradient
         float grad_gaussval = MAX_ALPHA * grad_alpha * opacity;
         float sq_norm = dot(local_hit, local_hit);
-        float grad_sq_norm = gaussval * powf(sq_norm, exp_power - 1.0f);
+        float grad_sq_norm;
+        if (exp_power == 1.0f) {
+            grad_sq_norm = gaussval;
+        } else if (exp_power == 2.0f) {
+            grad_sq_norm = gaussval * sq_norm;
+        } else if (exp_power == 3.0f) {
+            grad_sq_norm = gaussval * sq_norm * sq_norm;
+        } else {
+            grad_sq_norm = gaussval * powf(sq_norm, exp_power - 1.0f);
+        }
         float3 grad_x_local = -local_hit * grad_sq_norm * grad_gaussval;
 
         // * World hit point gradient

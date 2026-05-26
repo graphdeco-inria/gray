@@ -51,7 +51,7 @@ else:
 
 for cam in cameras:
     with torch.no_grad():
-        raytracer(cam)
+        raytracer(cam, skip_copy=True)
 # * Measure FPS
 print("Measuring FPS at iteration", iteration)
 
@@ -77,7 +77,7 @@ for i, cam in enumerate(cameras):
         raytracer.step()
     else:
         with torch.no_grad():
-            raytracer(cam)
+            raytracer(cam, skip_copy=True)
 end.record()
 torch.cuda.synchronize()
 secs = start.elapsed_time(end) / 1000.0
