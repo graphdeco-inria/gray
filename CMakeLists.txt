@@ -16,6 +16,8 @@ endif(NOT CMAKE_BUILD_TYPE)
 # * Add path to our CMake modules
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/cmake")
 
+option(GRAY_BUILD_FAST_VIEWER "Build the standalone C++ fast viewer" OFF)
+
 # * Dependency Discovery
 find_package(Python3 COMPONENTS Interpreter Development REQUIRED)
 # We use this to be able to link against CUDA::cudart and/or CUDA::cuda_driver
@@ -112,6 +114,8 @@ add_custom_command(
 )
 add_custom_target(copy_optix_ptx ALL DEPENDS ${PTX_DEST})
 add_dependencies(copy_optix_ptx optix_program)
+
+include(cmake/fast_viewer.cmake)
 
 install(FILES ${PTX_DEST} DESTINATION gray)
 

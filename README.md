@@ -157,6 +157,19 @@ Two types of MLPs are supported:
 
 If you wish to use [`tinycudann`](https://github.com/nvlabs/tiny-cuda-nn), you can optionally install it with `uv sync --extra tcnn` and enable it with `--tcnn`.
 
+### Fast Viewer
+Besides the Python viewer, which is designed for ease of development, a faster C++ viewer is also provided. It can be included during the build with
+```
+bash make.sh -DGRAY_BUILD_FAST_VIEWER=ON
+```
+and launched with 
+```bash
+MODEL_DIR=output/pretrained/bicycle
+
+build/fast_viewer -m $MODEL_DIR
+```
+The fast viewer does not include a UI and provides only minimal camera keyboard and mouse controls. Its performance can also be measured using the `--benchmark` and `--benchmark-test-cameras` flags.
+
 ### Depth Map Rendering
 You can render depth maps with `--render_depth`.
 
