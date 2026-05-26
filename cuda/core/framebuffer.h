@@ -4,6 +4,8 @@
 #include "../utils/common.h"
 #endif
 
+#include "config.h"
+#include "metadata.h"
 #include "../utils/vec_math.h"
 #include "gaussians.h" 
 
@@ -29,20 +31,31 @@ struct Framebuffer {
     floatK *__restrict__ grad_output_channels;
 
 #ifdef __CUDACC__
-    __device__ void write(uint32_t pixel_id, const Pixel &pixel) {
+    __device__ void write(uint32_t pixel_id, const Pixel &pixel, const Config &config, const Metadata &metadata) {
         output_channels[pixel_id] = pixel.output_channels;
-        output_depth[pixel_id] = pixel.output_depth;
-        transmittance[pixel_id] = pixel.transmittance;
-        full_transmittance[pixel_id] = pixel.full_transmittance;
-        remaining_channels_estimate[pixel_id] = pixel.remaining_channels_estimate;
-        ray_origin[pixel_id] = pixel.ray_origin;
-        ray_direction[pixel_id] = pixel.ray_direction;
+
+        if (*metadata.grads_enabled) {
+            output_depth[pixel_id] = pixel.output_depth;
+            transmittance[pixel_id] = pixel.transmittance;
+            full_transmittance[pixel_id] = pixel.full_transmittance;
+            remaining_channels_estimate[pixel_id] = pixel.remaining_channels_estimate;
+            ray_origin[pixel_id] = pixel.ray_origin;
+            ray_direction[pixel_id] = pixel.ray_direction;
+            return;
+        }
+
+        if (*config.render_depth || *config.needs_ray_output) {
+            output_depth[pixel_id] = pixel.output_depth;
+        }
+        if (*config.needs_ray_output) {
+            ray_direction[pixel_id] = pixel.ray_direction;
+        }
     }
 
     __device__ Pixel read(uint32_t pixel_id) const {
         Pixel pixel;
         pixel.output_channels = output_channels[pixel_id];
-        output_depth[pixel_id] = pixel.output_depth;
+        pixel.output_depth = output_depth[pixel_id];
         pixel.transmittance = transmittance[pixel_id];
         pixel.full_transmittance = full_transmittance[pixel_id];
         pixel.remaining_channels_estimate = remaining_channels_estimate[pixel_id];
