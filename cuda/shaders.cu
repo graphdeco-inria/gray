@@ -19,6 +19,9 @@ extern "C" __global__ void __intersection__is() {
     // * Load gaussian data
     uint32_t gaussian_id = optixGetInstanceIndex();
     float opacity = read_opacity(params, gaussian_id);
+    if (opacity <= alpha_threshold) {
+        return;
+    }
 
     // * Compute pixel index
     uint3 idx = optixGetLaunchIndex();
