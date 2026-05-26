@@ -9,12 +9,12 @@ class DatasetConfig:
     source_path: Annotated[str, arg(aliases=["-s"])]  
     model_path: Annotated[str, arg(aliases=["-m"])]  
 
-    downsampling: Annotated[str, arg(aliases=["-r"])] = 1  # * Integer downsampling factor
+    downsampling: Annotated[str, arg(aliases=["-r"])] = 4  # * Integer downsampling factor
     images_dir: Annotated[str, arg(aliases=["-i"])] = "images_{downsampling}" # * Relative to source_path or absolute
     
     point_cloud_file: Annotated[str, arg(aliases=["-p"])] = "point_cloud.safetensors" # * Relative to source_path or absolute
     
-    eval: bool = False  
+    eval: bool = True  
 
     def __post_init__(self):
         # * Allow using other settings when specifying paths e.g. {downsampling} in images_dir

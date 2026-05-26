@@ -109,7 +109,7 @@ SCENE_DIR=data/360_v2/bicycle
 DOWNSAMPLING_LEVEL=4
 OUTPUT_DIR=out/bicycle
 
-python train.py --eval -m $OUTPUT_DIR -s $SCENE_DIR -r $DOWNSAMPLING_LEVEL 
+python train.py -m $OUTPUT_DIR -s $SCENE_DIR -r $DOWNSAMPLING_LEVEL 
 python render.py -m $OUTPUT_DIR
 python metrics.py -m $OUTPUT_DIR
 python measure_fps.py -m $OUTPUT_DIR
