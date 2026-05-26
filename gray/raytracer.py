@@ -101,14 +101,21 @@ class Raytracer(torch.nn.Module):
     def init_exposure_comp(self, scene_info: SceneInfo):
         self.exposure_comp = ExposureComp(self.cfg, scene_info)
 
-    def __call__(self, cam_info: CameraInfo, znear=0.0, zfar=99999.9, skip_copy=False):
+    def __call__(
+        self,
+        cam_info: CameraInfo,
+        znear=0.0,
+        zfar=99999.9,
+        skip_copy=False,
+    ):
         "Render the scene and takes an optimization step if a target is provided."
 
         # * Set camera parameters
         camera = self.cuda_module.get_camera()
         camera.znear.fill_(znear)
         camera.zfar.fill_(zfar)
-        self.cuda_module.get_config().rays_from_python.fill_(False)
+        config = self.cuda_module.get_config()
+        config.rays_from_python.fill_(False)
         camera.vertical_fov_radians.fill_(cam_info.fov_y)
         camera.set_pose(cam_info.origin_cuda(), cam_info.rotation_c2w_blender_cuda())
 
@@ -118,9 +125,13 @@ class Raytracer(torch.nn.Module):
 
         # * Render and step if required
         framebuffer = self.cuda_module.get_framebuffer()
-        self.cuda_module.forward_pass()
         grad_enabled = torch.is_grad_enabled()
         assert not (skip_copy and grad_enabled), "skip_copy=True is not supported with gradients enabled"
+        assert not (
+            config.render_ellipsoids.item() and grad_enabled
+        ), "render_ellipsoids=True is only supported for no-grad display renders"
+
+        self.cuda_module.forward_pass()
 
         output_channels = framebuffer.output_channels.detach()
         if not skip_copy or grad_enabled:

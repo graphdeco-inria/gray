@@ -121,11 +121,7 @@ class Camera(Widget):
         updated, self.fov_y = imgui.slider_angle("FoV Y", self.fov_y, 5, 120)
         if updated:
             self.compute_fov_x()
-        
-        updated, [self.res_x, self.res_y] = imgui.slider_int2("Resolution", [self.res_x, self.res_y], 1, 4096)
-        if updated:
-            self.compute_fov_x()
-        
+
         curr_time = imgui.get_time()
         self.delta_time = curr_time - self.last_frame_time
         self.last_frame_time = curr_time
