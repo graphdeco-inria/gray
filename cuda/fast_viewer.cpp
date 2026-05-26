@@ -738,7 +738,8 @@ int main(int argc, char **argv) {
                                                cudaGraphicsRegisterFlagsWriteDiscard));
 
         std::cerr << "Loading " << mean_info.shape[0] << " gaussians from " << checkpoint << "\n";
-        Raytracer rt(cam.width, cam.height, mean_info.shape[0], cfg.sh_max_degree, cfg.ppll_forward_size, 1);
+        Raytracer rt(cam.width, cam.height, mean_info.shape[0], cfg.sh_max_degree, cfg.ppll_forward_size, 1,
+                 false);
         configure_raytracer(rt, cfg);
         load_gaussians(rt, checkpoint, cfg.sh);
         rt.rebuild_bvh();
