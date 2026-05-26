@@ -231,3 +231,21 @@ class CameraInfo:
             else:
                 result[field] = value
         return result
+
+    def origin_cuda(self) -> torch.Tensor:
+        "Returns the camera origin cached as a CUDA tensor"
+        tensor = getattr(self, "_origin_cuda", None)
+        if tensor is None:
+            tensor = torch.from_numpy(np.asarray(self.origin, dtype=np.float32)).cuda()
+            self._origin_cuda = tensor
+        return tensor
+
+    def rotation_c2w_blender_cuda(self) -> torch.Tensor:
+        "Returns the rotation from camera to world coordinates cached as a CUDA tensor, in Blender's coordinate system"
+        tensor = getattr(self, "_rotation_c2w_blender_cuda", None)
+        if tensor is None:
+            rotation = -np.asarray(self.R, dtype=np.float32).copy()
+            rotation[:, 0] *= -1
+            tensor = torch.from_numpy(rotation).cuda()
+            self._rotation_c2w_blender_cuda = tensor
+        return tensor
