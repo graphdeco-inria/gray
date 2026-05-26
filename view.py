@@ -5,7 +5,6 @@
 
 import os
 from OpenGL.GL import *
-import numpy as np
 from threading import Lock
 from argparse import ArgumentParser
 from imgui_bundle import imgui_ctx, imgui
@@ -73,6 +72,9 @@ class GaussianViewer(Viewer):
         self.scaling_modifier = 1.0
         # z-near for the renderer
         self.znear = 0.0
+        # Depth display remap range
+        self.depth_min = 0.0
+        self.depth_max = 10.0
 
         # * Camera view
         self.current_train_cam = -1
@@ -121,13 +123,18 @@ class GaussianViewer(Viewer):
                     if self.must_rebuild_bvh:
                         self.raytracer.cuda_module.rebuild_bvh()
                         self.must_rebuild_bvh = False
+
                     render = self.raytracer(camera, znear=self.znear).clamp(0, 1)
+
                 if self.render_mode == "Splats":
                     net_image = render.moveaxis(0, -1)
                 else:
                     framebuffer = self.raytracer.cuda_module.get_framebuffer()
-                    net_image = framebuffer.output_depth.detach().clone().repeat(1, 1, 3)
-                    net_image = (net_image - net_image.min()) / (net_image.max() - net_image.min())
+                    net_image = process_depth_map(
+                        framebuffer.output_depth.detach(),
+                        depth_min=self.depth_min,
+                        depth_max=self.depth_max,
+                    )
             end.record()
             end.synchronize()
             self.point_view.step(net_image)
@@ -159,6 +166,31 @@ class GaussianViewer(Viewer):
                 if znear_changed:
                     # No BVH rebuild required, just update camera param next render
                     pass
+
+                if self.render_mode == "Depth":
+                    depth_min_changed, self.depth_min = imgui.drag_float(
+                        "Depth Min",
+                        self.depth_min,
+                        v_min=-100000.0,
+                        v_max=100000.0,
+                        v_speed=0.1,
+                    )
+                    if depth_min_changed:
+                        self.depth_min = min(self.depth_min, self.depth_max - 1e-3)
+                    if imgui.is_item_hovered() and imgui.is_mouse_clicked(imgui.MouseButton_.right):
+                        self.depth_min = 0.0
+
+                    depth_max_changed, self.depth_max = imgui.drag_float(
+                        "Depth Max",
+                        self.depth_max,
+                        v_min=0.001,
+                        v_max=100000.0,
+                        v_speed=0.1,
+                    )
+                    if depth_max_changed:
+                        self.depth_max = max(self.depth_max, self.depth_min + 1e-3)
+                    if imgui.is_item_hovered() and imgui.is_mouse_clicked(imgui.MouseButton_.right):
+                        self.depth_max = 10.0
 
             if self.render_mode == "Ellipsoids":
                 _, self.ellipsoid_viewer.scaling_modifier = imgui.drag_float(
@@ -243,6 +275,8 @@ class GaussianViewer(Viewer):
             "scaling_modifier": self.scaling_modifier,
             "render_mode": self.render_mode,
             "znear": float(self.znear),
+            "depth_min": float(self.depth_min),
+            "depth_max": float(self.depth_max),
         }
 
     def server_recv(self, _, text):
@@ -250,6 +284,47 @@ class GaussianViewer(Viewer):
         self.render_mode = text["render_mode"]
         if "znear" in text:
             self.znear = float(text["znear"])
+        if "depth_min" in text:
+            self.depth_min = float(text["depth_min"])
+        if "depth_max" in text:
+            self.depth_max = float(text["depth_max"])
+
+
+def process_depth_map(raw_depth, depth_min: float, depth_max: float):
+    """Normalize depth and apply a viridis colormap; keep misses black."""
+    import torch
+
+    # Normalize depth so depth_min/near -> white (1) and depth_max/far -> black (0).
+    depth_max = max(depth_max, depth_min + 1e-6)
+    depth_range = depth_max - depth_min
+    depth = torch.clamp((depth_max - raw_depth) / depth_range, 0.0, 1.0)
+
+    # Piecewise-linear viridis mapping on GPU.
+    v = depth[..., 0]
+    flat_v = v.reshape(-1)
+    knots = raw_depth.new_tensor([0.0, 0.2, 0.4, 0.6, 0.8, 1.0])
+    colors = raw_depth.new_tensor(
+        [
+            [0.267004, 0.004874, 0.329415],
+            [0.253935, 0.265254, 0.529983],
+            [0.163625, 0.471133, 0.558148],
+            [0.134692, 0.658636, 0.517649],
+            [0.477504, 0.821444, 0.318195],
+            [0.993248, 0.906157, 0.143936],
+        ]
+    )
+
+    idx = torch.bucketize(flat_v, knots, right=True) - 1
+    idx = torch.clamp(idx, 0, knots.numel() - 2)
+    left_knot = knots[idx]
+    right_knot = knots[idx + 1]
+    t = ((flat_v - left_knot) / (right_knot - left_knot)).unsqueeze(-1)
+    left_color = colors[idx]
+    right_color = colors[idx + 1]
+    depth_rgb = (left_color + t * (right_color - left_color)).view(v.shape[0], v.shape[1], 3)
+
+    hit_mask = raw_depth > 0.0
+    return torch.where(hit_mask.expand_as(depth_rgb), depth_rgb, torch.zeros_like(depth_rgb))
 
 
 if __name__ == "__main__":
