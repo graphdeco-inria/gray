@@ -41,7 +41,7 @@ class Raytracer(torch.nn.Module):
         torch.classes.load_library(Raytracer.LIB_PATH)
         Raytracer.LOADED = True
 
-        self.cuda_module = torch.classes.quicktracer.Raytracer(
+        self.cuda_module = torch.classes.gray.Raytracer(
             image_width,
             image_height,
             num_points,
@@ -61,6 +61,7 @@ class Raytracer(torch.nn.Module):
         config.render_depth.fill_(cfg.render_depth)
         config.background_channels.copy_(self.bg_color)
         config.enable_sh.fill_(cfg.sh)
+        config.needs_ray_output.fill_(cfg.post_mlp)
 
         # * Only optimize the channels if they aren't a viewpoint-depenent output color
         config.update_channels.fill_(not cfg.pre_mlp and not cfg.sh)

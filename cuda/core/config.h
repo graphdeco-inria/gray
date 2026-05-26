@@ -15,6 +15,7 @@ struct Config {
     const bool *rays_from_python;
     const bool *zero_grads;
     const bool *enable_sh;
+    const bool *needs_ray_output;
     const bool *update_channels;
 };
 
@@ -35,6 +36,7 @@ struct ConfigDataHolder : torch::CustomClassHolder {
     Tensor zero_grads = torch::tensor({true}, CUDA_BOOL);
     Tensor enable_sh = torch::tensor({true}, CUDA_BOOL);
     Tensor has_pre_mlp = torch::tensor({false}, CUDA_BOOL);
+    Tensor needs_ray_output = torch::tensor({false}, CUDA_BOOL);
     Tensor update_channels = torch::tensor({true}, CUDA_BOOL);
 
     Config reify() {
@@ -51,6 +53,7 @@ struct ConfigDataHolder : torch::CustomClassHolder {
             .rays_from_python = reinterpret_cast<bool *>(rays_from_python.data_ptr()),
             .zero_grads = reinterpret_cast<bool *>(zero_grads.data_ptr()),
             .enable_sh = reinterpret_cast<bool *>(enable_sh.data_ptr()),
+            .needs_ray_output = reinterpret_cast<bool *>(needs_ray_output.data_ptr()),
             .update_channels = reinterpret_cast<bool *>(update_channels.data_ptr()),
         };
     }
@@ -69,6 +72,7 @@ struct ConfigDataHolder : torch::CustomClassHolder {
             .def_readonly("rays_from_python", &ConfigDataHolder::rays_from_python)
             .def_readonly("zero_grads", &ConfigDataHolder::zero_grads)
             .def_readonly("enable_sh", &ConfigDataHolder::enable_sh)
+            .def_readonly("needs_ray_output", &ConfigDataHolder::needs_ray_output)
             .def_readonly("update_channels", &ConfigDataHolder::update_channels);
     }
 };
