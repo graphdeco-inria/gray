@@ -1,6 +1,6 @@
 [submodule "third_party/RoMa"]
 	path = third_party/RoMa
-	url = git@github.com:yohan-pg/RoMa.git
+	url = https://github.com/yohan-pg/RoMa.git
 [submodule "third_party/optix"]
 	path = third_party/optix
 	url = https://github.com/NVIDIA/optix-dev.git
