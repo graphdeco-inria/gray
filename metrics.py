@@ -1,131 +1,88 @@
-#
-# Copyright (C) 2023, Inria
-# GRAPHDECO research group, https://team.inria.fr/graphdeco
-# All rights reserved.
-#
-# This software is free for non-commercial, research and evaluation use
-# under the terms of the LICENSE.md file.
-#
-# For inquiries contact  george.drettakis@inria.fr
-#
-
-
 from gray.imports import *
-from gray.utils import set_seeds
-from gray.config import Config
 
-from piq import psnr, ssim, LPIPS
 import warnings
-from concurrent.futures import ThreadPoolExecutor
-
-with warnings.catch_warnings():
-    warnings.simplefilter("ignore")
-    lpips = LPIPS().cuda()
+from torch.utils.data import Dataset, DataLoader
+from torchvision.io import read_image, ImageReadMode
+from piq import LPIPS
 
 
 @dataclass
 class MetricsCLI:
-    model_paths: Annotated[List[str], tyro.conf.arg(aliases=["-m"])]
+    model_paths: Annotated[List[str], arg(aliases=["-m"])]
+    batch_size: int = 1
 
 
 # * Parse Config
-cfg = tyro.cli(MetricsCLI)
-set_seeds(0)
+cli = tyro.cli(MetricsCLI)
 
-full_dict = {}
-per_view_dict = {}
-full_dict_polytopeonly = {}
-per_view_dict_polytopeonly = {}
+with warnings.catch_warnings():
+    warnings.simplefilter("ignore")
+    lpips_fn = LPIPS(reduction="none").cuda()
 
-for scene_dir in cfg.model_paths:
-    print("Scene:", scene_dir)
 
-    # * Initialize per-scene dictionaries
-    full_dict[scene_dir] = {}
-    per_view_dict[scene_dir] = {}
-    full_dict_polytopeonly[scene_dir] = {}
-    per_view_dict_polytopeonly[scene_dir] = {}
+class ImagePairDataset(Dataset):
+    def __init__(self, renders_dir: Path, gt_dir: Path):
+        self.renders_dir = renders_dir
+        self.gt_dir = gt_dir
+        self.fnames = sorted(os.listdir(renders_dir))
 
-    test_dir = Path(scene_dir) / "test"
+    def __len__(self):
+        return len(self.fnames)
 
-    for method in os.listdir(test_dir):
+    def __getitem__(self, idx):
+        fname = self.fnames[idx]
+        render = read_image(str(self.renders_dir / fname), ImageReadMode.RGB).float() / 255.0
+        gt = read_image(str(self.gt_dir / fname), ImageReadMode.RGB).float() / 255.0
+        return render, gt, fname
+
+
+avg_metrics = {}
+per_image_metrics = {}
+
+for model_path in cli.model_paths:
+    print("Scene:", model_path)
+    avg_metrics[model_path] = {}
+    per_image_metrics[model_path] = {}
+
+    test_dir = Path(model_path) / "test"
+
+    for method in sorted(os.listdir(test_dir)):
         print("Iterations:", method)
-
-        # * Initialize per-method dictionaries
-        full_dict[scene_dir][method] = {}
-        per_view_dict[scene_dir][method] = {}
-        full_dict_polytopeonly[scene_dir][method] = {}
-        per_view_dict_polytopeonly[scene_dir][method] = {}
         method_dir = test_dir / method
-        gt_dir = method_dir / "gt"
-        renders_dir = method_dir / "renders"
+        dataset = ImagePairDataset(method_dir / "renders", method_dir / "gt")
+        loader = DataLoader(dataset, batch_size=cli.batch_size, num_workers=4, pin_memory=True)
 
-        # * Read images
-        renders = []
-        gts = []
-        image_names = []
-
-        def load_image_pair(fname):
-            render = Image.open(renders_dir / fname)
-            gt = Image.open(gt_dir / fname)
-            render_tensor = TF.to_tensor(render).unsqueeze(0)[:, :3, :, :].cuda()
-            gt_tensor = TF.to_tensor(gt).unsqueeze(0)[:, :3, :, :].cuda()
-            return render_tensor, gt_tensor, fname
-
-        fnames = os.listdir(renders_dir)
-        renders = []
-        gts = []
-        image_names = []
-        with ThreadPoolExecutor() as executor:
-            results = list(executor.map(load_image_pair, fnames))
-            for render_tensor, gt_tensor, fname in results:
-                renders.append(render_tensor)
-                gts.append(gt_tensor)
-                image_names.append(fname)
-
-        # * Evaluate metrics
         ssim_scores = []
         psnr_scores = []
         lpips_scores = []
-        for idx in tqdm(range(len(renders)), desc="Metric evaluation progress"):
-            ssim_scores.append(ssim(renders[idx], gts[idx], downsample=False).item())
-            psnr_scores.append(psnr(renders[idx], gts[idx]).item())
-            lpips_scores.append(lpips(renders[idx], gts[idx]).item())
+        image_names = []
 
-        # * Compute averages
-        print("  SSIM : {:>12.7f}".format(torch.tensor(ssim_scores).mean(), ".5"))
-        print("  PSNR : {:>12.7f}".format(torch.tensor(psnr_scores).mean(), ".5"))
-        print("  LPIPS: {:>12.7f}".format(torch.tensor(lpips_scores).mean(), ".5"))
+        for renders_batch, gts_batch, fnames_batch in tqdm(loader, desc="Metric evaluation progress"):
+            renders_batch = renders_batch.cuda()
+            gts_batch = gts_batch.cuda()
 
-        # * Store average metrics
-        full_dict[scene_dir][method].update(
-            {
-                "SSIM": torch.tensor(ssim_scores).mean().item(),
-                "PSNR": torch.tensor(psnr_scores).mean().item(),
-                "LPIPS": torch.tensor(lpips_scores).mean().item(),
-            }
-        )
+            ssim_scores.extend(ssim(renders_batch, gts_batch, downsample=False, reduction="none").tolist())
+            psnr_scores.extend(psnr(renders_batch, gts_batch, reduction="none").tolist())
+            lpips_scores.extend(lpips_fn(renders_batch, gts_batch).tolist())
+            image_names.extend(fnames_batch)
 
-        # * Store per-view metrics
-        per_view_dict[scene_dir][method].update(
-            {
-                "SSIM": {
-                    name: value
-                    for value, name in zip(torch.tensor(ssim_scores).tolist(), image_names)
-                },
-                "PSNR": {
-                    name: value
-                    for value, name in zip(torch.tensor(psnr_scores).tolist(), image_names)
-                },
-                "LPIPS": {
-                    name: value
-                    for value, name in zip(torch.tensor(lpips_scores).tolist(), image_names)
-                },
-            }
-        )
+        ssim_mean = torch.tensor(ssim_scores).mean().item()
+        psnr_mean = torch.tensor(psnr_scores).mean().item()
+        lpips_mean = torch.tensor(lpips_scores).mean().item()
+
+        print("  SSIM : {:>12.7f}".format(ssim_mean))
+        print("  PSNR : {:>12.7f}".format(psnr_mean))
+        print("  LPIPS: {:>12.7f}".format(lpips_mean))
+
+        avg_metrics[model_path][method] = {"SSIM": ssim_mean, "PSNR": psnr_mean, "LPIPS": lpips_mean}
+        per_image_metrics[model_path][method] = {
+            "SSIM": {name: val for name, val in zip(image_names, ssim_scores)},
+            "PSNR": {name: val for name, val in zip(image_names, psnr_scores)},
+            "LPIPS": {name: val for name, val in zip(image_names, lpips_scores)},
+        }
 
     # * Save results
-    with open(scene_dir + "/results.json", "w") as fp:
-        json.dump(full_dict[scene_dir], fp, indent=True)
-    with open(scene_dir + "/per_view.json", "w") as fp:
-        json.dump(per_view_dict[scene_dir], fp, indent=True)
+    with open(model_path + "/results.json", "w") as fp:
+        json.dump(avg_metrics[model_path], fp, indent=True)
+    with open(model_path + "/per_view.json", "w") as fp:
+        json.dump(per_image_metrics[model_path], fp, indent=True)
