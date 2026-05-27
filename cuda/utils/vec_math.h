@@ -988,6 +988,26 @@ template <size_t K> __inline__ __device__ generic_float<K> sqrtf(const generic_f
     return r;
 }
 
+// safe_normalize
+
+#ifdef __CUDACC__
+#include <cuda_fp16.h>
+__inline__ __device__ float3 safe_normalize(float3 v) {
+    float inv_len = rsqrtf(fmaxf(dot(v, v), 1e-20f));
+    return v * inv_len;
+}
+
+struct half3 { __half x, y, z; };
+
+__device__ __forceinline__ float3 to_float3(float3 v) { return v; }
+__device__ __forceinline__ float3 to_float3(half3 v) {
+    return make_float3(__half2float(v.x), __half2float(v.y), __half2float(v.z));
+}
+__device__ __forceinline__ half3 to_half3(float3 v) {
+    return {__float2half_rn(v.x), __float2half_rn(v.y), __float2half_rn(v.z)};
+}
+#endif
+
 // ----------------------
 
 #if CHANNELS == 3

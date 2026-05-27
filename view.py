@@ -361,7 +361,7 @@ if __name__ == "__main__":
         save_path,
         image_width,
         image_height,
-        allocate_training_buffers=False,
+        inference_only=True,
     )
     train_cameras = [c for c in cameras if not c.is_test]
     test_cameras = [c for c in cameras if c.is_test]

@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cuda_fp16.h>
+
 #include "../utils/vec_math.h"
 
 struct Gaussians {
@@ -58,6 +60,8 @@ struct Gaussians {
 
     bool *__restrict__ was_visible;
     float *__restrict__ marked;
+
+    bool sh_is_fp16;
 };
 
 #ifndef __CUDACC__
@@ -67,7 +71,7 @@ struct GaussianDataHolder : torch::CustomClassHolder {
     int count = 1;
     int max_sh_degree;
     int num_sh_coeffs;
-    bool training_buffers_enabled;
+    bool inference_only;
     Tensor current_sh_degree = torch::tensor({0}, CUDA_INT32);
 
     Tensor mean = torch::zeros({1, 3}, CUDA_FLOAT32);
@@ -121,13 +125,14 @@ struct GaussianDataHolder : torch::CustomClassHolder {
     Tensor was_visible;
     Tensor marked;
 
-    GaussianDataHolder(int64_t max_sh_degree, bool training_buffers_enabled_ = true)
+    GaussianDataHolder(int64_t max_sh_degree, bool inference_only_ = false)
         : max_sh_degree(max_sh_degree), num_sh_coeffs((max_sh_degree + 1) * (max_sh_degree + 1) - 1),
-          training_buffers_enabled(training_buffers_enabled_) {
+          inference_only(inference_only_) {
         int num_sh_coeffs = (max_sh_degree + 1) * (max_sh_degree + 1) - 1;
-        sh_coeffs_dc = torch::zeros({1, 1, CHANNELS}, CUDA_FLOAT32);
-        sh_coeffs_rest = torch::zeros({1, num_sh_coeffs, CHANNELS}, CUDA_FLOAT32);
-        if (training_buffers_enabled) {
+        auto CUDA_SH_DTYPE = inference_only ? CUDA_FLOAT16 : CUDA_FLOAT32;
+        sh_coeffs_dc = torch::zeros({1, 1, CHANNELS}, CUDA_SH_DTYPE);
+        sh_coeffs_rest = torch::zeros({1, num_sh_coeffs, CHANNELS}, CUDA_SH_DTYPE);
+        if (!inference_only) {
             grad_mean = torch::zeros({1, 3}, CUDA_FLOAT32);
             grad_rotation = torch::zeros({1, 4}, CUDA_FLOAT32);
             grad_scale = torch::zeros({1, 3}, CUDA_FLOAT32);
@@ -216,7 +221,7 @@ struct GaussianDataHolder : torch::CustomClassHolder {
         lr_sh_dc.resize_({num_new_gaussians, 1});
         lr_sh_rest.resize_({num_new_gaussians, 1});
 
-        if (training_buffers_enabled) {
+        if (!inference_only) {
             grad_mean.resize_({num_new_gaussians, 3});
             grad_rotation.resize_({num_new_gaussians, 4});
             grad_scale.resize_({num_new_gaussians, 3});
@@ -286,62 +291,64 @@ struct GaussianDataHolder : torch::CustomClassHolder {
         gaussians.epsilon = reinterpret_cast<float *>(epsilon.data_ptr());
         gaussians.sh_update_laziness = reinterpret_cast<int *>(sh_update_laziness.data_ptr());
 
-        gaussians.grad_mean = training_buffers_enabled ? reinterpret_cast<float3 *>(grad_mean.data_ptr()) : nullptr;
+        gaussians.grad_mean = !inference_only ? reinterpret_cast<float3 *>(grad_mean.data_ptr()) : nullptr;
         gaussians.grad_rotation =
-            training_buffers_enabled ? reinterpret_cast<float4 *>(grad_rotation.data_ptr()) : nullptr;
+            !inference_only ? reinterpret_cast<float4 *>(grad_rotation.data_ptr()) : nullptr;
         gaussians.grad_scale =
-            training_buffers_enabled ? reinterpret_cast<float3 *>(grad_scale.data_ptr()) : nullptr;
+            !inference_only ? reinterpret_cast<float3 *>(grad_scale.data_ptr()) : nullptr;
         gaussians.grad_opacity =
-            training_buffers_enabled ? reinterpret_cast<float *>(grad_opacity.data_ptr()) : nullptr;
+            !inference_only ? reinterpret_cast<float *>(grad_opacity.data_ptr()) : nullptr;
         gaussians.grad_channels =
-            training_buffers_enabled ? reinterpret_cast<floatK *>(grad_channels.data_ptr()) : nullptr;
+            !inference_only ? reinterpret_cast<floatK *>(grad_channels.data_ptr()) : nullptr;
         gaussians.grad_sh_coeffs_dc =
-            training_buffers_enabled ? reinterpret_cast<float3 *>(grad_sh_coeffs_dc.data_ptr()) : nullptr;
+            !inference_only ? reinterpret_cast<float3 *>(grad_sh_coeffs_dc.data_ptr()) : nullptr;
         gaussians.grad_sh_coeffs_rest =
-            training_buffers_enabled ? reinterpret_cast<float3 *>(grad_sh_coeffs_rest.data_ptr()) : nullptr;
+            !inference_only ? reinterpret_cast<float3 *>(grad_sh_coeffs_rest.data_ptr()) : nullptr;
 
         gaussians.first_moment_mean =
-            training_buffers_enabled ? reinterpret_cast<float3 *>(first_moment_mean.data_ptr()) : nullptr;
+            !inference_only ? reinterpret_cast<float3 *>(first_moment_mean.data_ptr()) : nullptr;
         gaussians.first_moment_rotation =
-            training_buffers_enabled ? reinterpret_cast<float4 *>(first_moment_rotation.data_ptr()) : nullptr;
+            !inference_only ? reinterpret_cast<float4 *>(first_moment_rotation.data_ptr()) : nullptr;
         gaussians.first_moment_scale =
-            training_buffers_enabled ? reinterpret_cast<float3 *>(first_moment_scale.data_ptr()) : nullptr;
+            !inference_only ? reinterpret_cast<float3 *>(first_moment_scale.data_ptr()) : nullptr;
         gaussians.first_moment_opacity =
-            training_buffers_enabled ? reinterpret_cast<float *>(first_moment_opacity.data_ptr()) : nullptr;
+            !inference_only ? reinterpret_cast<float *>(first_moment_opacity.data_ptr()) : nullptr;
         gaussians.first_moment_channels =
-            training_buffers_enabled ? reinterpret_cast<floatK *>(first_moment_channels.data_ptr()) : nullptr;
-        gaussians.first_moment_sh_coeffs_dc = training_buffers_enabled
+            !inference_only ? reinterpret_cast<floatK *>(first_moment_channels.data_ptr()) : nullptr;
+        gaussians.first_moment_sh_coeffs_dc = !inference_only
                                                   ? reinterpret_cast<float3 *>(first_moment_sh_coeffs_dc.data_ptr())
                                                   : nullptr;
-        gaussians.first_moment_sh_coeffs_rest = training_buffers_enabled
+        gaussians.first_moment_sh_coeffs_rest = !inference_only
                                                     ? reinterpret_cast<float3 *>(first_moment_sh_coeffs_rest.data_ptr())
                                                     : nullptr;
 
         gaussians.second_moment_mean =
-            training_buffers_enabled ? reinterpret_cast<float3 *>(second_moment_mean.data_ptr()) : nullptr;
+            !inference_only ? reinterpret_cast<float3 *>(second_moment_mean.data_ptr()) : nullptr;
         gaussians.second_moment_rotation =
-            training_buffers_enabled ? reinterpret_cast<float4 *>(second_moment_rotation.data_ptr()) : nullptr;
+            !inference_only ? reinterpret_cast<float4 *>(second_moment_rotation.data_ptr()) : nullptr;
         gaussians.second_moment_scale =
-            training_buffers_enabled ? reinterpret_cast<float3 *>(second_moment_scale.data_ptr()) : nullptr;
+            !inference_only ? reinterpret_cast<float3 *>(second_moment_scale.data_ptr()) : nullptr;
         gaussians.second_moment_opacity =
-            training_buffers_enabled ? reinterpret_cast<float *>(second_moment_opacity.data_ptr()) : nullptr;
+            !inference_only ? reinterpret_cast<float *>(second_moment_opacity.data_ptr()) : nullptr;
         gaussians.second_moment_channels =
-            training_buffers_enabled ? reinterpret_cast<floatK *>(second_moment_channels.data_ptr()) : nullptr;
-        gaussians.second_moment_sh_coeffs_dc = training_buffers_enabled
+            !inference_only ? reinterpret_cast<floatK *>(second_moment_channels.data_ptr()) : nullptr;
+        gaussians.second_moment_sh_coeffs_dc = !inference_only
                                                    ? reinterpret_cast<float3 *>(second_moment_sh_coeffs_dc.data_ptr())
                                                    : nullptr;
-        gaussians.second_moment_sh_coeffs_rest = training_buffers_enabled
+        gaussians.second_moment_sh_coeffs_rest = !inference_only
                                                      ? reinterpret_cast<float3 *>(second_moment_sh_coeffs_rest.data_ptr())
                                                      : nullptr;
 
         gaussians.pruning_weight =
-            training_buffers_enabled ? reinterpret_cast<float *>(pruning_weight.data_ptr()) : nullptr;
+            !inference_only ? reinterpret_cast<float *>(pruning_weight.data_ptr()) : nullptr;
         gaussians.pruning_counter =
-            training_buffers_enabled ? reinterpret_cast<int *>(pruning_counter.data_ptr()) : nullptr;
+            !inference_only ? reinterpret_cast<int *>(pruning_counter.data_ptr()) : nullptr;
 
         gaussians.was_visible =
-            training_buffers_enabled ? reinterpret_cast<bool *>(was_visible.data_ptr()) : nullptr;
-        gaussians.marked = training_buffers_enabled ? reinterpret_cast<float *>(marked.data_ptr()) : nullptr;
+            !inference_only ? reinterpret_cast<bool *>(was_visible.data_ptr()) : nullptr;
+        gaussians.marked = !inference_only ? reinterpret_cast<float *>(marked.data_ptr()) : nullptr;
+
+        gaussians.sh_is_fp16 = inference_only;
 
         return gaussians;
     }
