@@ -64,7 +64,7 @@ class RaytracerConfig:
     lambda_ssim: float = 0.2
 
     # * Optimization
-    iterations: int = 15_000
+    iterations: Annotated[int, arg(aliases=["-t"])]  = 15_000
     lr_mean_init: float = 0.00016
     lr_mean_final: float = 0.0000016
     lr_channels: float = 0.0025  # * Only used when SH are disabled
