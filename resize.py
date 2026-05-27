@@ -8,9 +8,7 @@ from tyro.conf import arg
 from tqdm import tqdm
 from dataclasses import dataclass, field
 from typing import Annotated
-from concurrent.futures import ThreadPoolExecutor
-
-executor = ThreadPoolExecutor()
+from concurrent.futures import ProcessPoolExecutor, as_completed
 
 
 @dataclass
@@ -23,6 +21,33 @@ class Config:
 
     downsizing_factors: List[int] = field(default_factory=lambda: [1, 2, 4, 8])
     max_size: int = 1600
+
+def resize_image(img_name, src_dir, out_dirs, downsizing_factors, max_size):
+    img_path = src_dir / img_name
+    try:
+        img = Image.open(img_path).convert("RGB")
+    except Exception as e:
+        return f"Skipping {img_name}: {e}"
+    w, h = img.size
+    for factor, out_dir in zip(downsizing_factors, out_dirs):
+        scale = 1.0 / factor
+        target_w = int(w * scale)
+        target_h = int(h * scale)
+
+        # * Enforce max_size while preserving aspect ratio
+        if target_w > max_size or target_h > max_size:
+            if w >= h:
+                new_w = max_size
+                new_h = int(h * (max_size / w))
+            else:
+                new_h = max_size
+                new_w = int(w * (max_size / h))
+        else:
+            new_w, new_h = target_w, target_h
+
+        img_resized = img.resize((new_w, new_h), Image.LANCZOS)
+        out_path = (out_dir / img_name).with_suffix(".png")
+        img_resized.save(out_path)
 
 
 cfg = tyro.cli(Config)
@@ -53,32 +78,12 @@ for d in out_dirs:
 
 # * Process images
 img_list = [img_name for img_name in os.listdir(src_dir) if (src_dir / img_name).is_file()]
-for img_name in tqdm(img_list, desc="Resizing images"):
-    img_path = src_dir / img_name
-    try:
-        img = Image.open(img_path).convert("RGB")
-    except Exception as e:
-        print(f"Skipping {img_name}: {e}")
-        continue
-    w, h = img.size
-    for factor, out_dir in zip(args.downsizing_factors, out_dirs):
-        scale = 1.0 / factor
-        target_w = int(w * scale)
-        target_h = int(h * scale)
-
-        # * Enforce max_size while preserving aspect ratio
-        if target_w > args.max_size or target_h > args.max_size:
-            if w >= h:
-                new_w = args.max_size
-                new_h = int(h * (args.max_size / w))
-            else:
-                new_h = args.max_size
-                new_w = int(w * (args.max_size / h))
-        else:
-            new_w, new_h = target_w, target_h
-
-        # * Save image
-        img_resized = img.resize((new_w, new_h), Image.LANCZOS)
-        out_path = out_dir / img_name
-        out_path = out_path.with_suffix(".png")
-        executor.submit(img_resized.save, out_path)
+with ProcessPoolExecutor() as executor:
+    futures = {
+        executor.submit(resize_image, img_name, src_dir, out_dirs, args.downsizing_factors, args.max_size): img_name
+        for img_name in img_list
+    }
+    for future in tqdm(as_completed(futures), total=len(futures), desc="Resizing images"):
+        err = future.result()
+        if err:
+            print(err)
