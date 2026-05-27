@@ -6,8 +6,8 @@ find_package(OpenGL REQUIRED)
 find_package(X11 REQUIRED)
 
 add_executable(fast_viewer
-    cuda/fast_viewer.cpp
-    cuda/fast_viewer_kernels.cu
+    cuda/fast_viewer/fast_viewer.cpp
+    cuda/fast_viewer/fast_viewer_kernels.cu
     cuda/optix/bvh_wrapper.cu
     cuda/utils/sh.cu
     cuda/opt/adam.cu
@@ -20,6 +20,7 @@ target_include_directories(fast_viewer PRIVATE
     ${CMAKE_CUDA_TOOLKIT_INCLUDE_DIRECTORIES}
     ${OPENGL_INCLUDE_DIRS}
     ${X11_INCLUDE_DIR}
+    ${CMAKE_SOURCE_DIR}/cuda
 )
 
 target_compile_definitions(fast_viewer PRIVATE
