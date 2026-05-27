@@ -47,7 +47,7 @@ raytracer = Raytracer.from_safetensors(
     save_path,
     cli.width or cam0.image_width,
     cli.height or cam0.image_height,
-    allocate_training_buffers=False,
+    inference_only=True,
 )
 
 # * Render images
