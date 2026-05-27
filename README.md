@@ -125,6 +125,17 @@ The viewer can also be enabled during training with the `--viewer` flag.
 ## Details
 This section clarifies technical details and additional features.
 
+### Running COLMAP
+You can use your own COLMAP files under the standard layout expected by 3DGS. 
+
+We also provide a script for running COLMAP from `pycolmap-cuda12` (already installed). First, place your images under `data/$SCENE/input` and then run
+``` 
+python colmap.py -s data/$SCENE
+``` 
+GPU support is only for Linux; on Windows you can either install the CPU-only version `pycolmap`, or use the script from the 3DGS codebase.
+
+Once COLMAP has run successfully, you will need to resize the images and run dense initialization as explained earlier. 
+
 ### Memory Use
 We use per-pixel linked lists to store intersected Gaussians and data for the backward pass. You can control their size with the flags `--ppll_forward_size` and `--ppll_backward_size`. You might need to increase the defaults for your own scenes, or you might be able to reduce them. Running the standard scenes with the current settings requires 24GB of VRAM.
 
