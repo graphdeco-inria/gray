@@ -1,5 +1,7 @@
 import glfw
 import json
+import os
+import shutil
 import time
 import threading
 from typing import Optional
@@ -291,6 +293,8 @@ class Viewer(ABC):
             connect_thread.start()
         if self.mode & LOCAL_CLIENT:
             self._runner_params = hello_imgui.RunnerParams()
+            self._runner_params.ini_filename = "viewer_layout.ini"
+            self._runner_params.ini_filename_use_app_window_title = False
             self._runner_params.fps_idling.enable_idling = False
             self._runner_params.app_window_params.window_geometry.window_size_state = hello_imgui.WindowSizeState.maximized
             self._runner_params.app_window_params.window_title = self.window_title
@@ -308,6 +312,15 @@ class Viewer(ABC):
             # This is required to make 'want_capture_*' work. The default value is to create a full screen window,
             # but that would mean the 'want_capture_mouse' variable will always be set.
             self._runner_params.imgui_window_params.default_imgui_window_type = hello_imgui.DefaultImGuiWindowType.provide_full_screen_dock_space
+
+            # Seed the ini file from the bundled default layout if no user ini exists yet.
+            ini_path = hello_imgui.ini_settings_location(self._runner_params)
+            if not os.path.exists(ini_path):
+                default_ini = os.path.join(os.path.dirname(__file__), "default_layout.ini")
+                if os.path.exists(default_ini):
+                    os.makedirs(os.path.dirname(ini_path) or ".", exist_ok=True)
+                    shutil.copy2(default_ini, ini_path)
+
             immapp.run(self._runner_params, self._addon_params)
         if self.mode is SERVER:
             # Initialize OpenGL and setup widgets

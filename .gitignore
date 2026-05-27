@@ -20,6 +20,8 @@
 
 /tests/output*
 
+viewer_layout.ini
+
 __pycache__
 .ruff_cache
 *.pyc
