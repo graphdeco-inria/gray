@@ -16,7 +16,7 @@ source .venv/*/activate                   # activate environment
 bash ./make.sh                            # compile the cuda raytracer into `build/`
 ```
 
-This codebase requires a graphics card supporting OptiX 8 and a local CUDA toolkit installation exposing `nvcc`.
+This codebase requires a graphics card supporting OptiX 8 and a local CUDA 12 toolkit installation exposing `nvcc`.
 
 We are working on Windows support using WSL. Please report any issues if you attempt working on Windows.
 
