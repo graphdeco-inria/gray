@@ -20,7 +20,6 @@ import tyro
 from tyro.conf import subcommand, arg
 from typing import Annotated, List, Literal, Optional
 import json
-import numpy as np
 
 
 @dataclass
@@ -67,28 +66,22 @@ class GaussianViewer(Viewer):
         if callable(reset_motion):
             reset_motion()
 
-    def _camera_matches_view(self, cam_info: Optional["CameraInfo"]) -> bool:
-        if cam_info is None:
-            return False
-        return (
-            np.array_equal(self.camera_widget.origin, cam_info.origin)
-            and np.array_equal(self.camera_widget.to_world[:3, :3], cam_info.R)
-            and self.camera_widget.fov_x == cam_info.fov_x
-            and self.camera_widget.fov_y == cam_info.fov_y
-        )
-
     def _sync_active_colmap_view(self):
         if 0 <= self.current_train_cam < len(self.train_cameras or []):
-            if self._camera_matches_view(self.train_cameras[self.current_train_cam]):
+            if self._active_colmap_serial is None or self.camera_widget.user_change_serial != self._active_colmap_serial:
+                self.current_train_cam = -1
+            else:
                 self.current_test_cam = -1
                 return
-            self.current_train_cam = -1
 
         if 0 <= self.current_test_cam < len(self.test_cameras or []):
-            if self._camera_matches_view(self.test_cameras[self.current_test_cam]):
+            if self._active_colmap_serial is None or self.camera_widget.user_change_serial != self._active_colmap_serial:
+                self.current_test_cam = -1
+            else:
                 self.current_train_cam = -1
                 return
-            self.current_test_cam = -1
+
+        self._active_colmap_serial = None
 
     def import_server_modules(self):
         global torch
@@ -150,6 +143,7 @@ class GaussianViewer(Viewer):
         # * Camera view
         self.current_train_cam = -1
         self.current_test_cam = -1
+        self._active_colmap_serial = None
 
     def step(self):
         camera = CameraInfo(
@@ -304,17 +298,20 @@ class GaussianViewer(Viewer):
             if train_cam_changed and self.train_cameras:
                 self.camera_widget.set(self.train_cameras[self.current_train_cam])
                 self._reset_camera_motion()
+                self._active_colmap_serial = self.camera_widget.user_change_serial
                 self.current_test_cam = -1
                 self.saved_views_widget.clear_selection()
             elif test_cam_changed and self.test_cameras:
                 self.camera_widget.set(self.test_cameras[self.current_test_cam])
                 self._reset_camera_motion()
+                self._active_colmap_serial = self.camera_widget.user_change_serial
                 self.current_train_cam = -1
                 self.saved_views_widget.clear_selection()
 
             if self.saved_views_widget.show_gui():
                 self.current_train_cam = -1
                 self.current_test_cam = -1
+                self._active_colmap_serial = None
 
         with imgui_ctx.begin("Point View"):
             self.point_view.show_gui()
