@@ -209,6 +209,30 @@ class GaussianViewer(Viewer):
             imgui.separator_text("Camera Settings")
             self.camera_widget.show_gui()
 
+            preview_label = (
+                self.saved_camera_labels[self.current_saved_camera]
+                if 0 <= self.current_saved_camera < len(self.saved_camera_labels)
+                else "Select a saved camera"
+            )
+            if imgui.begin_combo("Saved Cameras", preview_label):
+                for idx, label in enumerate(self.saved_camera_labels):
+                    is_selected = idx == self.current_saved_camera
+                    clicked, _ = imgui.selectable(label, is_selected)
+                    if clicked:
+                        self._apply_saved_camera(idx)
+                    if is_selected:
+                        imgui.set_item_default_focus()
+                imgui.end_combo()
+
+            _, self.saved_camera_name = imgui.input_text_with_hint(
+                "Saved Camera Name", "Enter a camera name", self.saved_camera_name
+            )
+            if imgui.button("Save Current Camera"):
+                self._queue_save_current_camera()
+
+            if self.saved_camera_status:
+                imgui.text_wrapped(self.saved_camera_status)
+
             using_train_cam = self.current_train_cam != -1
             if not using_train_cam:
                 imgui.push_style_color(imgui.Col_.frame_bg, (0.0, 0.0, 0.0, 0.0))
@@ -252,9 +276,11 @@ class GaussianViewer(Viewer):
             if train_cam_changed and self.train_cameras:
                 self.camera_widget.set(self.train_cameras[self.current_train_cam])
                 self.current_test_cam = -1
+                self.current_saved_camera = -1
             elif test_cam_changed and self.test_cameras:
                 self.camera_widget.set(self.test_cameras[self.current_test_cam])
                 self.current_train_cam = -1
+                self.current_saved_camera = -1
 
         with imgui_ctx.begin("Point View"):
             self.point_view.show_gui()
@@ -266,7 +292,7 @@ class GaussianViewer(Viewer):
                 self.camera_widget.process_keyboard_input()
 
     def client_send(self):
-        return None, {
+        payload = {
             "scaling_modifier": self.scaling_modifier,
             "render_mode": self.render_mode,
             "znear": float(self.znear),
@@ -274,17 +300,30 @@ class GaussianViewer(Viewer):
             "depth_max": float(self.depth_max),
             "ellipsoid_min_opacity": float(self.ellipsoid_min_opacity),
         }
+        if self._pending_saved_camera_name is not None:
+            payload["save_camera_name"] = self._pending_saved_camera_name
+            self._pending_saved_camera_name = None
+        return None, payload
 
     def onconnect(self, _):
         self._cameras_sent = False
+        self._saved_cameras_sent = False
+        self._load_saved_cameras_from_disk(preferred_key=self._selected_saved_camera_key())
 
     def server_send(self):
-        text = {"render_modes": self.render_modes}
+        text = {
+            "render_modes": self.render_modes,
+            "saved_camera_status": self.saved_camera_status,
+        }
         # * Send the cameras list once per connection so the client can control cameras
         if not getattr(self, "_cameras_sent", False):
             text["train_cameras"] = [c.to_json() for c in self.train_cameras]
             text["test_cameras"] = [c.to_json() for c in (self.test_cameras or [])]
             self._cameras_sent = True
+        if not self._saved_cameras_sent or self._saved_cameras_dirty:
+            text["saved_cameras"] = [camera.to_json(include_scope=True) for camera in self.saved_cameras]
+            self._saved_cameras_sent = True
+            self._saved_cameras_dirty = False
         return None, text
 
     def client_recv(self, _, text):
@@ -303,6 +342,10 @@ class GaussianViewer(Viewer):
                 self.camera_widget.res_y = init_cam.image_height
                 self.camera_widget.compute_fov_x()
                 self.camera_widget.set(init_cam)
+        if "saved_cameras" in text:
+            self._set_saved_cameras_from_payload(text["saved_cameras"])
+        if "saved_camera_status" in text:
+            self.saved_camera_status = text["saved_camera_status"]
 
     def show_status(self):
         imgui.text(f"{self.camera_widget.res_x} × {self.camera_widget.res_y}")
@@ -321,6 +364,8 @@ class GaussianViewer(Viewer):
             self.depth_max = float(text["depth_max"])
         if "ellipsoid_min_opacity" in text:
             self.ellipsoid_min_opacity = float(text["ellipsoid_min_opacity"])
+        if "save_camera_name" in text:
+            self._save_current_camera(text["save_camera_name"])
 
 
 def process_depth_map(raw_depth, depth_min: float, depth_max: float):
@@ -406,5 +451,13 @@ if __name__ == "__main__":
         test_cameras = [c for c in cameras if c.is_test]
 
         mode = ViewerMode.SERVER if cli.server else ViewerMode.LOCAL
-        viewer = GaussianViewer(raytracer, train_cameras, test_cameras, mode=mode, image_scale=cli.image_scale)
+        viewer = GaussianViewer(
+            raytracer,
+            train_cameras,
+            test_cameras,
+            mode=mode,
+            image_scale=cli.image_scale,
+            model_path=cfg.model_path,
+            source_path=cfg.source_path,
+        )
         viewer.run(ip="0.0.0.0" if cli.server else "localhost", port=cli.port)
