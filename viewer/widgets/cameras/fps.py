@@ -124,6 +124,12 @@ class FPSCamera(Camera):
         self.origin_motion = np.zeros(3)
         self.rotation_motion = np.zeros(3)
 
+    def reset_motion(self):
+        self.origin_motion = np.zeros(3)
+        self.rotation_motion = np.zeros(3)
+        self.smoothed_origin_motion = np.zeros(3)
+        self.smoothed_rotation_motion = np.zeros(3)
+
     def import_client_modules(self):
         super().import_client_modules()
 
