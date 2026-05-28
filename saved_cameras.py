@@ -6,7 +6,7 @@ import numpy as np
 from gray.camera import CameraInfo
 
 
-SAVED_CAMERAS_FILENAME = "viewer_saved_cameras.json"
+SAVED_VIEWS_FILENAME = "viewer_saved_cameras.json"
 
 
 def camera_storage_dir(path: Optional[str]) -> Optional[str]:
@@ -18,11 +18,11 @@ def camera_storage_dir(path: Optional[str]) -> Optional[str]:
     return path
 
 
-def saved_camera_file(path: Optional[str]) -> Optional[str]:
+def saved_view_file(path: Optional[str]) -> Optional[str]:
     storage_dir = camera_storage_dir(path)
     if storage_dir is None:
         return None
-    return os.path.join(storage_dir, SAVED_CAMERAS_FILENAME)
+    return os.path.join(storage_dir, SAVED_VIEWS_FILENAME)
 
 
 def _camera_info_from_saved_json(data: dict) -> CameraInfo:
@@ -48,7 +48,7 @@ def _camera_info_from_saved_json(data: dict) -> CameraInfo:
     )
 
 
-def load_saved_cameras(path: Optional[str]) -> list[CameraInfo]:
+def load_saved_views(path: Optional[str]) -> list[CameraInfo]:
     if path is None or not os.path.exists(path):
         return []
 
@@ -78,18 +78,18 @@ def load_saved_cameras(path: Optional[str]) -> list[CameraInfo]:
     return cameras
 
 
-def write_saved_cameras(path: str, cameras: list[CameraInfo]):
+def write_saved_views(path: str, views: list[CameraInfo]):
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "w") as f:
-        json.dump([camera.to_json() for camera in cameras], f, indent=4)
+        json.dump([view.to_json() for view in views], f, indent=4)
 
 
-def upsert_saved_camera(cameras: list[CameraInfo], saved_camera: CameraInfo) -> list[CameraInfo]:
-    updated_cameras = list(cameras)
-    for idx, camera in enumerate(updated_cameras):
-        if camera.image_name == saved_camera.image_name:
-            updated_cameras[idx] = saved_camera
+def upsert_saved_view(views: list[CameraInfo], saved_view: CameraInfo) -> list[CameraInfo]:
+    updated_views = list(views)
+    for idx, view in enumerate(updated_views):
+        if view.image_name == saved_view.image_name:
+            updated_views[idx] = saved_view
             break
     else:
-        updated_cameras.append(saved_camera)
-    return updated_cameras
+        updated_views.append(saved_view)
+    return updated_views
