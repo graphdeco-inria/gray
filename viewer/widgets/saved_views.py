@@ -113,6 +113,11 @@ class SavedViews(Widget):
     def clear_selection(self):
         self.current_saved_view = -1
 
+    def _reset_camera_motion(self):
+        reset_motion = getattr(self.camera_widget, "reset_motion", None)
+        if callable(reset_motion):
+            reset_motion()
+
     def _clear_saved_views_state(self):
         self.saved_view_name = ""
         self.model_saved_views = []
@@ -282,6 +287,7 @@ class SavedViews(Widget):
 
         saved_view = self.saved_views[index]
         self.camera_widget.set(saved_view)
+        self._reset_camera_motion()
         self.current_saved_view = index
         return True
 
@@ -331,9 +337,6 @@ class SavedViews(Widget):
             imgui.end_disabled()
         if not has_saved_views:
             imgui.end_disabled()
-
-        if self.saved_view_status:
-            imgui.text_wrapped(self.saved_view_status)
 
         if imgui.button("Delete All Saved Views"):
             imgui.open_popup("Confirm Clear Saved Views")

@@ -62,6 +62,11 @@ class GaussianViewer(Viewer):
         self.remote_codec = remote_codec
         self.jpeg_quality = jpeg_quality
 
+    def _reset_camera_motion(self):
+        reset_motion = getattr(self.camera_widget, "reset_motion", None)
+        if callable(reset_motion):
+            reset_motion()
+
     def _camera_matches_view(self, cam_info: Optional["CameraInfo"]) -> bool:
         if cam_info is None:
             return False
@@ -298,10 +303,12 @@ class GaussianViewer(Viewer):
 
             if train_cam_changed and self.train_cameras:
                 self.camera_widget.set(self.train_cameras[self.current_train_cam])
+                self._reset_camera_motion()
                 self.current_test_cam = -1
                 self.saved_views_widget.clear_selection()
             elif test_cam_changed and self.test_cameras:
                 self.camera_widget.set(self.test_cameras[self.current_test_cam])
+                self._reset_camera_motion()
                 self.current_train_cam = -1
                 self.saved_views_widget.clear_selection()
 
