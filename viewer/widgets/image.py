@@ -3,6 +3,9 @@
 #
 
 import io
+import time
+from collections import deque
+from typing import Optional
 
 import torch
 import numpy as np
@@ -79,7 +82,69 @@ class Image(Widget):
         self.step_called = False
         self.remote_codec = remote_codec
         self.jpeg_quality = max(1, min(95, int(jpeg_quality)))
+        self._remote_frame_id = 0
+        self._pending_remote_frame_id = None
+        self._last_presented_remote_frame_id = None
+        self._received_frame_times = deque()
+        self._presented_frame_times = deque()
+        self._dropped_remote_frames = 0
+        self._remote_stats_window_seconds = 1.0
         super().__init__(mode)
+
+    def reset_remote_stats(self):
+        self._pending_remote_frame_id = None
+        self._last_presented_remote_frame_id = None
+        self._received_frame_times.clear()
+        self._presented_frame_times.clear()
+        self._dropped_remote_frames = 0
+
+    def _prune_remote_events(self, timestamps: deque[float], now: Optional[float] = None):
+        if now is None:
+            now = time.monotonic()
+        cutoff = now - self._remote_stats_window_seconds
+        while timestamps and timestamps[0] < cutoff:
+            timestamps.popleft()
+
+    def _record_remote_event(self, timestamps: deque[float], now: Optional[float] = None):
+        if now is None:
+            now = time.monotonic()
+        timestamps.append(now)
+        self._prune_remote_events(timestamps, now=now)
+
+    def _remote_event_fps(self, timestamps: deque[float]) -> float:
+        now = time.monotonic()
+        self._prune_remote_events(timestamps, now=now)
+        if not timestamps:
+            return 0.0
+        if len(timestamps) == 1:
+            return float(len(timestamps))
+        duration = max(now - timestamps[0], 1e-6)
+        return len(timestamps) / duration
+
+    def _mark_remote_frame_received(self, frame_id: int):
+        now = time.monotonic()
+        self._record_remote_event(self._received_frame_times, now=now)
+        if (
+            self._pending_remote_frame_id is not None
+            and self._pending_remote_frame_id != self._last_presented_remote_frame_id
+        ):
+            self._dropped_remote_frames += 1
+        self._pending_remote_frame_id = frame_id
+
+    def _mark_remote_frame_presented(self):
+        if self._pending_remote_frame_id is None:
+            return
+        if self._pending_remote_frame_id == self._last_presented_remote_frame_id:
+            return
+        self._record_remote_event(self._presented_frame_times)
+        self._last_presented_remote_frame_id = self._pending_remote_frame_id
+
+    def remote_stats(self) -> dict[str, float | int]:
+        return {
+            "received_fps": self._remote_event_fps(self._received_frame_times),
+            "presented_fps": self._remote_event_fps(self._presented_frame_times),
+            "dropped_frames": self._dropped_remote_frames,
+        }
 
     def setup(self):
         """ Create OpenGL texture to be displayed. """
@@ -118,6 +183,7 @@ class Image(Widget):
         if self.img is None:
             return
 
+        self._mark_remote_frame_presented()
         glBindTexture(GL_TEXTURE_2D, self.texture.id)
         self._upload()
 
@@ -149,10 +215,15 @@ class NumpyImage(Image):
         if not self.step_called:
             return None, None
         self.step_called = False
-        return _encode_remote_image(self.img, self.remote_codec, self.jpeg_quality)
+        binary, metadata = _encode_remote_image(self.img, self.remote_codec, self.jpeg_quality)
+        self._remote_frame_id += 1
+        metadata["frame_id"] = self._remote_frame_id
+        return binary, metadata
     
     def client_recv(self, binary, text):
         self.img = _decode_remote_image(binary, text)
+        if "frame_id" in text:
+            self._mark_remote_frame_received(int(text["frame_id"]))
 
 
 # Check if 'cuda-python' and 'torch' are available
@@ -224,11 +295,18 @@ if enable_torch_image:
             if img.dtype != torch.uint8:
                 img = (torch.clip(img, 0, 1) * 255).byte()
             self.step_called = False
-            return _encode_remote_image(img.contiguous().cpu().numpy(), self.remote_codec, self.jpeg_quality)
+            binary, metadata = _encode_remote_image(
+                img.contiguous().cpu().numpy(), self.remote_codec, self.jpeg_quality
+            )
+            self._remote_frame_id += 1
+            metadata["frame_id"] = self._remote_frame_id
+            return binary, metadata
 
         def client_recv(self, binary, text):
             img = _decode_remote_image(binary, text)
             self.img = torch.from_numpy(img).to(0)
+            if "frame_id" in text:
+                self._mark_remote_frame_received(int(text["frame_id"]))
 
 else:
     class TorchImage(NumpyImage):

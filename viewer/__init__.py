@@ -312,6 +312,7 @@ class Viewer(ABC):
             self._runner_params.app_window_params.window_geometry.window_size_state = hello_imgui.WindowSizeState.maximized
             self._runner_params.app_window_params.window_title = self.window_title
             self._runner_params.imgui_window_params.show_status_bar = True
+            self._runner_params.imgui_window_params.show_status_fps = False
             self._runner_params.imgui_window_params.show_menu_bar = True
             self._runner_params.callbacks.post_init = self._setup
             # self._runner_params.callbacks.before_exit = self._before_exit
