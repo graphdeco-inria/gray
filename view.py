@@ -6,6 +6,7 @@
 import os
 from threading import Lock
 from argparse import ArgumentParser
+import numpy as np
 from imgui_bundle import imgui_ctx, imgui
 from viewer import Viewer
 from viewer.types import ViewerMode
@@ -18,6 +19,29 @@ import tyro
 from tyro.conf import subcommand, arg
 from typing import Annotated, List, Optional
 import json
+
+
+@dataclass
+class RemoteCameraInfo:
+    origin: np.ndarray
+    R: np.ndarray
+    fov_x: float
+    fov_y: float
+    image_width: int
+    image_height: int
+    is_test: bool = False
+
+    @staticmethod
+    def from_json(json_data: dict):
+        return RemoteCameraInfo(
+            origin=np.array(json_data["origin"]),
+            R=np.array(json_data["R"]),
+            fov_x=json_data["fov_x"],
+            fov_y=json_data["fov_y"],
+            image_width=json_data["image_width"],
+            image_height=json_data["image_height"],
+            is_test=json_data.get("is_test", False),
+        )
 
 
 @dataclass
@@ -80,13 +104,13 @@ class GaussianViewer(Viewer):
         self.point_view = TorchImage(self.mode)
 
         # * Render modes
-        self.render_modes = ["Splats"]
+        self.render_modes = ["Gaussians"]
         if self.raytracer is not None:
             if self.raytracer.cfg.render_depth:
                 self.render_modes.append("Depth")
             if not self.training and not self.raytracer.cfg.post_mlp:
                 self.render_modes.append("Ellipsoids")
-        self.render_mode = "Splats"
+        self.render_mode = "Gaussians"
 
         # * Render settings
         self.scaling_modifier = 1.0
@@ -95,6 +119,7 @@ class GaussianViewer(Viewer):
         # Depth display remap range
         self.depth_min = 0.0
         self.depth_max = 10.0
+        self.ellipsoid_min_opacity = 0.0
 
         # * Camera view
         self.current_train_cam = -1
@@ -115,7 +140,7 @@ class GaussianViewer(Viewer):
             is_test=False,
         )
 
-        if self.render_mode in ["Splats", "Depth", "Ellipsoids"]:
+        if self.render_mode in ["Gaussians", "Depth", "Ellipsoids"]:
             start = torch.cuda.Event(enable_timing=True)
             end = torch.cuda.Event(enable_timing=True)
             start.record()
@@ -124,6 +149,7 @@ class GaussianViewer(Viewer):
                     config = self.raytracer.cuda_module.get_config()
                     config.global_scale_factor.copy_(self.scaling_modifier)
                     config.render_ellipsoids.fill_(self.render_mode == "Ellipsoids")
+                    config.ellipsoid_min_opacity.fill_(self.ellipsoid_min_opacity)
                     if self.must_rebuild_bvh:
                         self.raytracer.cuda_module.rebuild_bvh()
                         self.must_rebuild_bvh = False
@@ -133,7 +159,7 @@ class GaussianViewer(Viewer):
                         znear=self.znear,
                     ).clamp(0, 1)
 
-                if self.render_mode in ["Splats", "Ellipsoids"]:
+                if self.render_mode in ["Gaussians", "Ellipsoids"]:
                     net_image = render.moveaxis(0, -1)
                 else:
                     framebuffer = self.raytracer.cuda_module.get_framebuffer()
@@ -155,7 +181,7 @@ class GaussianViewer(Viewer):
             self.render_mode = self.render_modes[render_mode_choice]
 
             imgui.separator_text("Render Settings")
-            if self.render_mode in ["Splats", "Depth", "Ellipsoids"]:
+            if self.render_mode in ["Gaussians", "Depth", "Ellipsoids"]:
                 scaling_changed, self.scaling_modifier = imgui.drag_float(
                     "Scaling Modifier", self.scaling_modifier, v_min=0, v_max=2, v_speed=0.01
                 )
@@ -195,6 +221,13 @@ class GaussianViewer(Viewer):
                         self.depth_max = max(self.depth_max, self.depth_min + 1e-3)
                     if imgui.is_item_hovered() and imgui.is_mouse_clicked(imgui.MouseButton_.right):
                         self.depth_max = 10.0
+
+                if self.render_mode == "Ellipsoids":
+                    _, self.ellipsoid_min_opacity = imgui.slider_float(
+                        "Min Opacity", self.ellipsoid_min_opacity, v_min=0.0, v_max=1.0
+                    )
+                    if imgui.is_item_hovered() and imgui.is_mouse_clicked(imgui.MouseButton_.right):
+                        self.ellipsoid_min_opacity = 0.0
 
             imgui.separator_text("Camera Settings")
             self.camera_widget.show_gui()
@@ -262,6 +295,7 @@ class GaussianViewer(Viewer):
             "znear": float(self.znear),
             "depth_min": float(self.depth_min),
             "depth_max": float(self.depth_max),
+            "ellipsoid_min_opacity": float(self.ellipsoid_min_opacity),
         }
 
     def onconnect(self, _):
@@ -284,8 +318,8 @@ class GaussianViewer(Viewer):
             if self.render_mode not in self.render_modes:
                 self.render_mode = self.render_modes[0]
         if "train_cameras" in text:
-            self.train_cameras = [gray.scene.CameraInfo.from_json(c) for c in text["train_cameras"]]
-            self.test_cameras = [gray.scene.CameraInfo.from_json(c) for c in text["test_cameras"]]
+            self.train_cameras = [RemoteCameraInfo.from_json(c) for c in text["train_cameras"]]
+            self.test_cameras = [RemoteCameraInfo.from_json(c) for c in text["test_cameras"]]
             init_cam = self.test_cameras[0] if self.test_cameras else (self.train_cameras[0] if self.train_cameras else None)
             if init_cam is not None:
                 self.camera_widget.res_x = init_cam.image_width
@@ -308,6 +342,8 @@ class GaussianViewer(Viewer):
             self.depth_min = float(text["depth_min"])
         if "depth_max" in text:
             self.depth_max = float(text["depth_max"])
+        if "ellipsoid_min_opacity" in text:
+            self.ellipsoid_min_opacity = float(text["ellipsoid_min_opacity"])
 
 
 def process_depth_map(raw_depth, depth_min: float, depth_max: float):
