@@ -59,6 +59,7 @@ class FPSCamera(Camera):
                 -delta.x * self.radians_per_pixel * self.delta_time * self.mouse_speed
             )
             self.apply_rotation(0, angle_right, angle_up)
+            self.mark_user_change()
             imgui.reset_mouse_drag_delta()
             return True
 
@@ -66,33 +67,50 @@ class FPSCamera(Camera):
 
     def process_keyboard_input(self) -> bool:
         if self.mode != ViewerMode.SERVER:
+            moved = False
             if imgui.is_key_down(self.movement_keys["w"]):
                 self.origin_motion += self.forward
+                moved = True
             if imgui.is_key_down(self.movement_keys["a"]):
                 self.origin_motion -= self.right
+                moved = True
             if imgui.is_key_down(self.movement_keys["q"]):
                 self.origin_motion -= self.up
+                moved = True
             if imgui.is_key_down(self.movement_keys["s"]):
                 self.origin_motion -= self.forward
+                moved = True
             if imgui.is_key_down(self.movement_keys["d"]):
                 self.origin_motion += self.right
+                moved = True
             if imgui.is_key_down(self.movement_keys["e"]):
                 self.origin_motion += self.up
+                moved = True
 
             if imgui.is_key_down(self.movement_keys["o"]):
                 self.rotation_motion[0] += 50 * self.radians_per_pixel
+                moved = True
             if imgui.is_key_down(self.movement_keys["u"]):
                 self.rotation_motion[0] -= 50 * self.radians_per_pixel
+                moved = True
             if imgui.is_key_down(self.movement_keys["i"]):
                 self.rotation_motion[1] += 50 * self.radians_per_pixel
+                moved = True
             if imgui.is_key_down(self.movement_keys["k"]):
                 self.rotation_motion[1] -= 50 * self.radians_per_pixel
+                moved = True
             if imgui.is_key_down(self.movement_keys["j"]):
                 self.rotation_motion[2] += 50 * self.radians_per_pixel
+                moved = True
             if imgui.is_key_down(self.movement_keys["l"]):
                 self.rotation_motion[2] -= 50 * self.radians_per_pixel
+                moved = True
+            if moved:
+                self.mark_user_change()
+            return moved
         else:
             logging.warning("Unexpected keyboard input for server camera")
+            return False
 
     def show_gui(self):
         # Sliders

@@ -27,6 +27,7 @@ class Camera(Widget):
 
         self.last_frame_time = 0
         self.delta_time = 0
+        self.user_change_serial = 0
 
         if to_world is not None:
             self.update_pose(to_world)
@@ -76,6 +77,9 @@ class Camera(Widget):
         """ Child class should override this to navigate. """
         pass
 
+    def mark_user_change(self):
+        self.user_change_serial += 1
+
     @property
     def to_world(self) -> np.ndarray:
         mat = np.identity(4, dtype=np.float32)
@@ -121,6 +125,7 @@ class Camera(Widget):
         updated, self.fov_y = imgui.slider_angle("FoV Y", self.fov_y, 5, 120)
         if updated:
             self.compute_fov_x()
+            self.mark_user_change()
 
         curr_time = imgui.get_time()
         self.delta_time = curr_time - self.last_frame_time

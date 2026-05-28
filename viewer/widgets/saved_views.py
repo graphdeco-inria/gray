@@ -6,8 +6,6 @@ import os
 from collections import Counter
 from typing import Optional
 
-import numpy as np
-
 from gray.camera import CameraInfo
 from saved_cameras import load_saved_views, saved_view_file, upsert_saved_view, write_saved_views
 
@@ -28,6 +26,7 @@ class SavedViews(Widget):
         self.saved_view_name = ""
         self.saved_view_status = ""
         self.current_saved_view = -1
+        self._active_saved_view_serial: Optional[int] = None
         self.saved_views: list[CameraInfo] = []
         self.saved_view_labels: list[str] = []
         self._outbound_action: Optional[dict] = None
@@ -112,6 +111,7 @@ class SavedViews(Widget):
 
     def clear_selection(self):
         self.current_saved_view = -1
+        self._active_saved_view_serial = None
 
     def _reset_camera_motion(self):
         reset_motion = getattr(self.camera_widget, "reset_motion", None)
@@ -122,24 +122,18 @@ class SavedViews(Widget):
         self.saved_view_name = ""
         self.model_saved_views = []
         self.source_saved_views = []
+        self.clear_selection()
         self._refresh_saved_view_list()
-
-    def _current_view_matches_saved_view(self, saved_view: CameraInfo) -> bool:
-        current_origin = np.asarray(self.camera_widget.origin)
-        current_rotation = np.asarray(self.camera_widget.to_world[:3, :3])
-        return (
-            np.array_equal(current_origin, np.asarray(saved_view.origin))
-            and np.array_equal(current_rotation, np.asarray(saved_view.R))
-            and self.camera_widget.fov_x == saved_view.fov_x
-            and self.camera_widget.fov_y == saved_view.fov_y
-        )
 
     def _sync_active_saved_view(self):
         if not (0 <= self.current_saved_view < len(self.saved_views)):
-            self.current_saved_view = -1
+            self.clear_selection()
             return
-        if not self._current_view_matches_saved_view(self.saved_views[self.current_saved_view]):
-            self.current_saved_view = -1
+        if self._active_saved_view_serial is None:
+            self.clear_selection()
+            return
+        if self.camera_widget.user_change_serial != self._active_saved_view_serial:
+            self.clear_selection()
 
     def _capture_current_view(self, name: str) -> CameraInfo:
         return CameraInfo(
@@ -184,6 +178,7 @@ class SavedViews(Widget):
         self.saved_view_name = ""
         self.saved_view_status = f"Saved '{name}' to {os.path.basename(self.saved_view_write_file)}"
         self._refresh_saved_view_list(preferred_key=(self.saved_view_write_scope, saved_view.image_name))
+        self._active_saved_view_serial = self.camera_widget.user_change_serial
         self._mark_saved_views_changed()
         return True
 
@@ -289,6 +284,7 @@ class SavedViews(Widget):
         self.camera_widget.set(saved_view)
         self._reset_camera_motion()
         self.current_saved_view = index
+        self._active_saved_view_serial = self.camera_widget.user_change_serial
         return True
 
     def show_gui(self) -> bool:
