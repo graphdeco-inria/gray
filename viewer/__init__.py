@@ -120,10 +120,19 @@ class Viewer(ABC):
         return True
 
     def _recv_packet(self, websocket, *, timeout: Optional[float] = None):
-        payload = json.loads(websocket.recv(timeout=timeout, decode=False))
+        payload_message = websocket.recv(timeout=timeout)
+        if not isinstance(payload_message, str):
+            raise ValueError(
+                f"Expected websocket control packet as text, received {type(payload_message).__name__}"
+            )
+        payload = json.loads(payload_message)
         binary_blob = b""
         if payload.get("binaries"):
-            binary_blob = websocket.recv(timeout=timeout)
+            # Once we start consuming a packet, finish it fully before polling again,
+            # otherwise a timeout between the header and body can desynchronize the stream.
+            binary_blob = websocket.recv()
+            if isinstance(binary_blob, str):
+                raise ValueError("Expected websocket frame payload as binary, received text")
         return payload, binary_blob
 
     def _apply_packet(self, payload: dict, binary_blob, *, viewer_recv: str, widget_recv: str):
