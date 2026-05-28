@@ -130,7 +130,7 @@ You can use your own COLMAP files under the standard layout expected by 3DGS.
 
 We also provide a script for running COLMAP from `pycolmap-cuda12` (already installed). First, place your images under `data/$SCENE/input` and then run
 ``` 
-python colmap.py -s data/$SCENE
+python run_colmap.py -s data/$SCENE
 ``` 
 GPU support is only for Linux; on Windows you can either install the CPU-only version `pycolmap`, or use the script from the 3DGS codebase.
 
