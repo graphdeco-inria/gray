@@ -2,6 +2,7 @@ import glfw
 import json
 import os
 import shutil
+import socket
 import time
 import threading
 from typing import Optional
@@ -12,6 +13,7 @@ from websockets.sync.client import connect, ClientConnection
 from .types import *
 from .widgets import Widget
 from abc import ABC, abstractmethod
+
 
 class Viewer(ABC):
     """
@@ -335,6 +337,7 @@ class Viewer(ABC):
 
             # Start server
             with serve(self._server_loop, ip, port, max_size=None, compression=None) as server:
+                display_ip(ip, port)
                 server_thread = threading.Thread(target=server.serve_forever)
                 server_thread.start()
                 while True:
@@ -407,3 +410,36 @@ class Viewer(ABC):
     @abstractmethod
     def show_gui(self) -> bool:
         """ Define the GUI here. """
+
+
+def display_ip(bind_ip: str, port: int):
+    if bind_ip == "localhost":
+        connect_ip = "127.0.0.1"
+    elif bind_ip not in {"0.0.0.0", "::"}:
+        connect_ip = bind_ip
+    else:
+        connect_ip = "127.0.0.1"
+
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
+                sock.connect(("10.255.255.255", 1))
+                detected_ip = sock.getsockname()[0]
+                if detected_ip and not detected_ip.startswith("127."):
+                    connect_ip = detected_ip
+        except OSError:
+            pass
+
+        if connect_ip == "127.0.0.1":
+            try:
+                for _, _, _, _, sockaddr in socket.getaddrinfo(
+                    socket.gethostname(), None, family=socket.AF_INET, type=socket.SOCK_DGRAM
+                ):
+                    detected_ip = sockaddr[0]
+                    if detected_ip and not detected_ip.startswith("127."):
+                        connect_ip = detected_ip
+                        break
+            except OSError:
+                pass
+
+    print(f"INFO: Server listening on ws://{bind_ip}:{port}")
+    print(f"INFO: Connect with: python view.py --client {connect_ip} --port {port}")
