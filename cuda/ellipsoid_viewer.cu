@@ -20,6 +20,12 @@ __device__ __forceinline__ void raygen_ellipsoids(uint32_t pixel_id,
 }
 
 extern "C" __global__ void __intersection__is_ellipsoid() {
+    // * Skip low-opacity gaussians
+    uint32_t gaussian_id = optixGetInstanceIndex();
+    if (read_opacity(params, gaussian_id) < *params.config.ellipsoid_min_opacity) {
+        return;
+    }
+
     float3 local_o = optixGetObjectRayOrigin();
     float3 local_d = optixGetObjectRayDirection();
 
