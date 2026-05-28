@@ -4,7 +4,6 @@
 
 
 import os
-from collections import Counter
 from threading import Lock
 from argparse import ArgumentParser
 from imgui_bundle import imgui_ctx, imgui
@@ -13,6 +12,7 @@ from viewer import Viewer
 from viewer.types import ViewerMode
 from viewer.widgets.image import TorchImage
 from viewer.widgets.cameras.fps import FPSCamera
+from viewer.widgets.saved_views import SavedViews
 from viewer.widgets.monitor import PerformanceMonitor
 
 from dataclasses import dataclass
@@ -20,7 +20,6 @@ import tyro
 from tyro.conf import subcommand, arg
 from typing import Annotated, List, Optional
 import json
-import numpy as np
 
 
 @dataclass
@@ -31,97 +30,6 @@ class ViewerCLI:
     client: Optional[str] = None # * Connect as a client to the given server IP address
     port: int = 6009
     image_scale: Annotated[float, arg(aliases=["-x"])] = 1.0  # * Image scale factor; >1 = upsampling, <1 = downsampling
-
-
-SAVED_CAMERAS_FILENAME = "viewer_saved_cameras.json"
-
-
-def _camera_storage_dir(path: Optional[str]) -> Optional[str]:
-    if not path:
-        return None
-    path = os.path.abspath(path)
-    if os.path.isfile(path):
-        return os.path.dirname(path)
-    return path
-
-
-def _saved_camera_file(path: Optional[str]) -> Optional[str]:
-    storage_dir = _camera_storage_dir(path)
-    if storage_dir is None:
-        return None
-    return os.path.join(storage_dir, SAVED_CAMERAS_FILENAME)
-
-
-@dataclass
-class SavedCamera:
-    name: str
-    fov_y: float
-    to_world: np.ndarray
-    scope: str
-
-    @staticmethod
-    def from_json(data: dict, scope: str) -> "SavedCamera":
-        name = str(data["name"]).strip()
-        if not name:
-            raise ValueError("saved camera name cannot be empty")
-
-        to_world = np.asarray(data["to_world"], dtype=np.float32)
-        if to_world.shape != (4, 4):
-            raise ValueError("saved camera to_world must be a 4x4 matrix")
-
-        return SavedCamera(
-            name=name,
-            fov_y=float(data["fov_y"]),
-            to_world=to_world,
-            scope=scope,
-        )
-
-    def to_json(self, include_scope: bool = False) -> dict:
-        result = {
-            "name": self.name,
-            "fov_y": float(self.fov_y),
-            "to_world": self.to_world.tolist(),
-        }
-        if include_scope:
-            result["scope"] = self.scope
-        return result
-
-
-def load_saved_cameras(path: Optional[str], scope: str) -> list[SavedCamera]:
-    if path is None or not os.path.exists(path):
-        return []
-
-    try:
-        with open(path, "r") as f:
-            payload = json.load(f)
-    except OSError as exc:
-        print(f"WARNING: Failed to open saved cameras at '{path}': {exc}")
-        return []
-    except json.JSONDecodeError as exc:
-        print(f"WARNING: Failed to parse saved cameras at '{path}': {exc}")
-        return []
-
-    if not isinstance(payload, list):
-        print(f"WARNING: Expected a list of cameras in '{path}', got {type(payload).__name__}")
-        return []
-
-    cameras = []
-    for idx, camera_data in enumerate(payload):
-        if not isinstance(camera_data, dict):
-            print(f"WARNING: Skipping saved camera #{idx} in '{path}': expected an object")
-            continue
-        try:
-            cameras.append(SavedCamera.from_json(camera_data, scope))
-        except (KeyError, TypeError, ValueError) as exc:
-            print(f"WARNING: Skipping saved camera #{idx} in '{path}': {exc}")
-    return cameras
-
-
-def write_saved_cameras(path: str, cameras: list[SavedCamera]):
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    with open(path, "w") as f:
-        json.dump([camera.to_json() for camera in cameras], f, indent=4)
-
 
 class GaussianViewer(Viewer):
     def __init__(
@@ -144,24 +52,8 @@ class GaussianViewer(Viewer):
         self.must_rebuild_bvh = False
         self.training = training
         self.image_scale = image_scale
-        self.saved_camera_name = ""
-        self.saved_camera_status = ""
-        self.current_saved_camera = -1
-        self.saved_cameras: list[SavedCamera] = []
-        self.saved_camera_labels: list[str] = []
-        self._pending_saved_camera_name: Optional[str] = None
-        self._pending_saved_camera_selection: Optional[tuple[Optional[str], str]] = None
-        self._saved_cameras_sent = False
-        self._saved_cameras_dirty = False
-        self.saved_camera_model_file = _saved_camera_file(model_path)
-        self.saved_camera_source_file = _saved_camera_file(source_path)
-        self.saved_camera_write_scope = "model" if self.saved_camera_model_file is not None else "source"
-        self.saved_camera_write_file = (
-            self.saved_camera_model_file if self.saved_camera_model_file is not None else self.saved_camera_source_file
-        )
-        self.model_saved_cameras: list[SavedCamera] = []
-        self.source_saved_cameras: list[SavedCamera] = []
-        self._load_saved_cameras_from_disk()
+        self.model_path = model_path
+        self.source_path = source_path
 
     def import_server_modules(self):
         global torch
@@ -190,6 +82,12 @@ class GaussianViewer(Viewer):
             self.camera_widget.res_y = _fixed_res_y
             self.camera_widget.compute_fov_x()
         self.camera_widget.server_recv = _server_recv_fixed_res
+        self.saved_views_widget = SavedViews(
+            self.mode,
+            self.camera_widget,
+            model_path=self.model_path,
+            source_path=self.source_path,
+        )
         self.point_view = TorchImage(self.mode)
 
         # * Render modes
@@ -213,142 +111,6 @@ class GaussianViewer(Viewer):
         # * Camera view
         self.current_train_cam = -1
         self.current_test_cam = -1
-
-    def _selected_saved_camera_key(self) -> Optional[tuple[str, str]]:
-        if 0 <= self.current_saved_camera < len(self.saved_cameras):
-            camera = self.saved_cameras[self.current_saved_camera]
-            return camera.scope, camera.name
-        return None
-
-    def _refresh_saved_camera_list(self, preferred_key: Optional[tuple[Optional[str], str]] = None):
-        if preferred_key is None:
-            preferred_key = self._selected_saved_camera_key()
-
-        self.saved_cameras = [*self.model_saved_cameras, *self.source_saved_cameras]
-        name_counts = Counter(camera.name for camera in self.saved_cameras)
-        self.saved_camera_labels = []
-        for camera in self.saved_cameras:
-            if name_counts[camera.name] > 1:
-                self.saved_camera_labels.append(f"{camera.name} [{camera.scope}]")
-            else:
-                self.saved_camera_labels.append(camera.name)
-
-        self.current_saved_camera = -1
-        if preferred_key is None:
-            return
-
-        preferred_scope, preferred_name = preferred_key
-        for idx, camera in enumerate(self.saved_cameras):
-            if camera.name != preferred_name:
-                continue
-            if preferred_scope is None or camera.scope == preferred_scope:
-                self.current_saved_camera = idx
-                break
-
-    def _load_saved_cameras_from_disk(self, preferred_key: Optional[tuple[Optional[str], str]] = None):
-        seen_paths = set()
-        self.model_saved_cameras = []
-        self.source_saved_cameras = []
-        for scope, path in (
-            ("model", self.saved_camera_model_file),
-            ("source", self.saved_camera_source_file),
-        ):
-            if path is None:
-                continue
-            norm_path = os.path.normcase(os.path.abspath(path))
-            if norm_path in seen_paths:
-                continue
-            seen_paths.add(norm_path)
-            cameras = load_saved_cameras(path, scope)
-            if scope == "model":
-                self.model_saved_cameras = cameras
-            else:
-                self.source_saved_cameras = cameras
-        self._refresh_saved_camera_list(preferred_key=preferred_key)
-
-    def _set_saved_cameras_from_payload(self, payload: list[dict]):
-        self.model_saved_cameras = []
-        self.source_saved_cameras = []
-        for camera_data in payload:
-            scope = camera_data.get("scope", "model")
-            try:
-                camera = SavedCamera.from_json(camera_data, scope)
-            except (KeyError, TypeError, ValueError) as exc:
-                print(f"WARNING: Skipping saved camera from server payload: {exc}")
-                continue
-            if scope == "source":
-                self.source_saved_cameras.append(camera)
-            else:
-                self.model_saved_cameras.append(camera)
-
-        preferred_key = self._pending_saved_camera_selection
-        self._refresh_saved_camera_list(preferred_key=preferred_key)
-        self._pending_saved_camera_selection = None
-
-    def _apply_saved_camera(self, index: int):
-        if not (0 <= index < len(self.saved_cameras)):
-            return
-
-        saved_camera = self.saved_cameras[index]
-        self.camera_widget.update_pose(saved_camera.to_world)
-        self.camera_widget.fov_y = float(saved_camera.fov_y)
-        self.camera_widget.compute_fov_x()
-        self.current_train_cam = -1
-        self.current_test_cam = -1
-        self.current_saved_camera = index
-
-    def _capture_saved_camera(self, name: str) -> SavedCamera:
-        return SavedCamera(
-            name=name,
-            fov_y=float(self.camera_widget.fov_y),
-            to_world=np.asarray(self.camera_widget.to_world, dtype=np.float32),
-            scope=self.saved_camera_write_scope,
-        )
-
-    def _save_current_camera(self, raw_name: str) -> bool:
-        name = raw_name.strip()
-        if not name:
-            self.saved_camera_status = "Enter a name before saving a camera."
-            return False
-        if self.saved_camera_write_file is None:
-            self.saved_camera_status = "No model/source path is available for saving cameras."
-            return False
-
-        saved_camera = self._capture_saved_camera(name)
-        target_list = (
-            self.model_saved_cameras if self.saved_camera_write_scope == "model" else self.source_saved_cameras
-        )
-
-        existing_idx = next((idx for idx, camera in enumerate(target_list) if camera.name == name), None)
-        if existing_idx is None:
-            target_list.append(saved_camera)
-        else:
-            target_list[existing_idx] = saved_camera
-
-        try:
-            write_saved_cameras(self.saved_camera_write_file, target_list)
-        except OSError as exc:
-            self.saved_camera_status = f"Failed to save camera '{name}': {exc}"
-            return False
-
-        self.saved_camera_name = name
-        self.saved_camera_status = f"Saved camera '{name}'."
-        self._refresh_saved_camera_list(preferred_key=(saved_camera.scope, saved_camera.name))
-        self._saved_cameras_dirty = True
-        return True
-
-    def _queue_save_current_camera(self):
-        name = self.saved_camera_name.strip()
-        if not name:
-            self.saved_camera_status = "Enter a name before saving a camera."
-            return
-
-        if self.mode == ViewerMode.CLIENT:
-            self._pending_saved_camera_name = name
-            self._pending_saved_camera_selection = (None, name)
-            self.saved_camera_status = f"Saving camera '{name}'..."
-        else:
-            self._save_current_camera(name)
 
     def step(self):
         camera = CameraInfo(
@@ -457,29 +219,7 @@ class GaussianViewer(Viewer):
             imgui.separator_text("Camera Settings")
             self.camera_widget.show_gui()
 
-            preview_label = (
-                self.saved_camera_labels[self.current_saved_camera]
-                if 0 <= self.current_saved_camera < len(self.saved_camera_labels)
-                else "Select a saved camera"
-            )
-            if imgui.begin_combo("Saved Cameras", preview_label):
-                for idx, label in enumerate(self.saved_camera_labels):
-                    is_selected = idx == self.current_saved_camera
-                    clicked, _ = imgui.selectable(label, is_selected)
-                    if clicked:
-                        self._apply_saved_camera(idx)
-                    if is_selected:
-                        imgui.set_item_default_focus()
-                imgui.end_combo()
-
-            _, self.saved_camera_name = imgui.input_text_with_hint(
-                "Saved Camera Name", "Enter a camera name", self.saved_camera_name
-            )
-            if imgui.button("Save Current Camera"):
-                self._queue_save_current_camera()
-
-            if self.saved_camera_status:
-                imgui.text_wrapped(self.saved_camera_status)
+            imgui.separator_text("Select COLMAP View")
 
             using_train_cam = self.current_train_cam != -1
             if not using_train_cam:
@@ -524,11 +264,15 @@ class GaussianViewer(Viewer):
             if train_cam_changed and self.train_cameras:
                 self.camera_widget.set(self.train_cameras[self.current_train_cam])
                 self.current_test_cam = -1
-                self.current_saved_camera = -1
+                self.saved_views_widget.clear_selection()
             elif test_cam_changed and self.test_cameras:
                 self.camera_widget.set(self.test_cameras[self.current_test_cam])
                 self.current_train_cam = -1
-                self.current_saved_camera = -1
+                self.saved_views_widget.clear_selection()
+
+            if self.saved_views_widget.show_gui():
+                self.current_train_cam = -1
+                self.current_test_cam = -1
 
         with imgui_ctx.begin("Point View"):
             self.point_view.show_gui()
@@ -540,7 +284,7 @@ class GaussianViewer(Viewer):
                 self.camera_widget.process_keyboard_input()
 
     def client_send(self):
-        payload = {
+        return None, {
             "scaling_modifier": self.scaling_modifier,
             "render_mode": self.render_mode,
             "znear": float(self.znear),
@@ -548,30 +292,18 @@ class GaussianViewer(Viewer):
             "depth_max": float(self.depth_max),
             "ellipsoid_min_opacity": float(self.ellipsoid_min_opacity),
         }
-        if self._pending_saved_camera_name is not None:
-            payload["save_camera_name"] = self._pending_saved_camera_name
-            self._pending_saved_camera_name = None
-        return None, payload
 
     def onconnect(self, _):
         self._cameras_sent = False
-        self._saved_cameras_sent = False
-        self._load_saved_cameras_from_disk(preferred_key=self._selected_saved_camera_key())
+        self.saved_views_widget.onconnect()
 
     def server_send(self):
-        text = {
-            "render_modes": self.render_modes,
-            "saved_camera_status": self.saved_camera_status,
-        }
+        text = {"render_modes": self.render_modes}
         # * Send the cameras list once per connection so the client can control cameras
         if not getattr(self, "_cameras_sent", False):
             text["train_cameras"] = [c.to_json() for c in self.train_cameras]
             text["test_cameras"] = [c.to_json() for c in (self.test_cameras or [])]
             self._cameras_sent = True
-        if not self._saved_cameras_sent or self._saved_cameras_dirty:
-            text["saved_cameras"] = [camera.to_json(include_scope=True) for camera in self.saved_cameras]
-            self._saved_cameras_sent = True
-            self._saved_cameras_dirty = False
         return None, text
 
     def client_recv(self, _, text):
@@ -590,10 +322,6 @@ class GaussianViewer(Viewer):
                 self.camera_widget.res_y = init_cam.image_height
                 self.camera_widget.compute_fov_x()
                 self.camera_widget.set(init_cam)
-        if "saved_cameras" in text:
-            self._set_saved_cameras_from_payload(text["saved_cameras"])
-        if "saved_camera_status" in text:
-            self.saved_camera_status = text["saved_camera_status"]
 
     def show_status(self):
         imgui.text(f"{self.camera_widget.res_x} × {self.camera_widget.res_y}")
@@ -612,8 +340,6 @@ class GaussianViewer(Viewer):
             self.depth_max = float(text["depth_max"])
         if "ellipsoid_min_opacity" in text:
             self.ellipsoid_min_opacity = float(text["ellipsoid_min_opacity"])
-        if "save_camera_name" in text:
-            self._save_current_camera(text["save_camera_name"])
 
 
 def process_depth_map(raw_depth, depth_min: float, depth_max: float):
