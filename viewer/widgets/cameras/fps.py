@@ -30,7 +30,6 @@ class FPSCamera(Camera):
         self.rot_speed = 1
         self.mouse_speed = 2
         self.radians_per_pixel = np.pi / 150
-        self.invert_mouse = False
         self.current_type = "FPS"
 
     def setup(self):
@@ -53,8 +52,6 @@ class FPSCamera(Camera):
     def process_mouse_input(self) -> bool:
         if imgui.is_mouse_dragging(0):
             delta = imgui.get_mouse_drag_delta()
-            delta.y *= -1 if self.invert_mouse else 1
-            delta.x *= -1 if self.invert_mouse else 1
             angle_right = (
                 -delta.y * self.radians_per_pixel * self.delta_time * self.mouse_speed
             )
@@ -105,7 +102,7 @@ class FPSCamera(Camera):
         _, self.rot_speed = imgui.slider_float(
             "Rotation Speed", self.rot_speed, 0.1, 10
         )
-        _, self.invert_mouse = imgui.checkbox("Invert Mouse", self.invert_mouse)
+        _, self.mouse_speed = imgui.slider_float("Mouse Speed", self.mouse_speed, 0.1, 10)
 
         # Smooth motion
         weight = 1 - np.exp(-self.delta_time / (self.smoothness + 1e-6))
