@@ -6,8 +6,8 @@
 import os
 from threading import Lock
 from argparse import ArgumentParser
-import numpy as np
 from imgui_bundle import imgui_ctx, imgui
+from gray.camera import CameraInfo
 from viewer import Viewer
 from viewer.types import ViewerMode
 from viewer.widgets.image import TorchImage
@@ -19,29 +19,6 @@ import tyro
 from tyro.conf import subcommand, arg
 from typing import Annotated, List, Optional
 import json
-
-
-@dataclass
-class RemoteCameraInfo:
-    origin: np.ndarray
-    R: np.ndarray
-    fov_x: float
-    fov_y: float
-    image_width: int
-    image_height: int
-    is_test: bool = False
-
-    @staticmethod
-    def from_json(json_data: dict):
-        return RemoteCameraInfo(
-            origin=np.array(json_data["origin"]),
-            R=np.array(json_data["R"]),
-            fov_x=json_data["fov_x"],
-            fov_y=json_data["fov_y"],
-            image_width=json_data["image_width"],
-            image_height=json_data["image_height"],
-            is_test=json_data.get("is_test", False),
-        )
 
 
 @dataclass
@@ -104,13 +81,13 @@ class GaussianViewer(Viewer):
         self.point_view = TorchImage(self.mode)
 
         # * Render modes
-        self.render_modes = ["Gaussians"]
+        self.render_modes = ["Splats"]
         if self.raytracer is not None:
             if self.raytracer.cfg.render_depth:
                 self.render_modes.append("Depth")
             if not self.training and not self.raytracer.cfg.post_mlp:
                 self.render_modes.append("Ellipsoids")
-        self.render_mode = "Gaussians"
+        self.render_mode = "Splats"
 
         # * Render settings
         self.scaling_modifier = 1.0
@@ -126,7 +103,7 @@ class GaussianViewer(Viewer):
         self.current_test_cam = -1
 
     def step(self):
-        camera = gray.scene.CameraInfo(
+        camera = CameraInfo(
             uid=0,
             R=self.camera_widget.to_world[:3, :3],
             T=None,
@@ -140,7 +117,7 @@ class GaussianViewer(Viewer):
             is_test=False,
         )
 
-        if self.render_mode in ["Gaussians", "Depth", "Ellipsoids"]:
+        if self.render_mode in ["Splats", "Depth", "Ellipsoids"]:
             start = torch.cuda.Event(enable_timing=True)
             end = torch.cuda.Event(enable_timing=True)
             start.record()
@@ -159,7 +136,7 @@ class GaussianViewer(Viewer):
                         znear=self.znear,
                     ).clamp(0, 1)
 
-                if self.render_mode in ["Gaussians", "Ellipsoids"]:
+                if self.render_mode in ["Splats", "Ellipsoids"]:
                     net_image = render.moveaxis(0, -1)
                 else:
                     framebuffer = self.raytracer.cuda_module.get_framebuffer()
@@ -181,7 +158,7 @@ class GaussianViewer(Viewer):
             self.render_mode = self.render_modes[render_mode_choice]
 
             imgui.separator_text("Render Settings")
-            if self.render_mode in ["Gaussians", "Depth", "Ellipsoids"]:
+            if self.render_mode in ["Splats", "Depth", "Ellipsoids"]:
                 scaling_changed, self.scaling_modifier = imgui.drag_float(
                     "Scaling Modifier", self.scaling_modifier, v_min=0, v_max=2, v_speed=0.01
                 )
@@ -318,8 +295,8 @@ class GaussianViewer(Viewer):
             if self.render_mode not in self.render_modes:
                 self.render_mode = self.render_modes[0]
         if "train_cameras" in text:
-            self.train_cameras = [RemoteCameraInfo.from_json(c) for c in text["train_cameras"]]
-            self.test_cameras = [RemoteCameraInfo.from_json(c) for c in text["test_cameras"]]
+            self.train_cameras = [CameraInfo.from_json(c) for c in text["train_cameras"]]
+            self.test_cameras = [CameraInfo.from_json(c) for c in text["test_cameras"]]
             init_cam = self.test_cameras[0] if self.test_cameras else (self.train_cameras[0] if self.train_cameras else None)
             if init_cam is not None:
                 self.camera_widget.res_x = init_cam.image_width
