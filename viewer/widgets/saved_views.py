@@ -9,7 +9,7 @@ from typing import Optional
 import numpy as np
 
 from gray.camera import CameraInfo
-from saved_cameras import load_saved_cameras, saved_camera_file, upsert_saved_camera, write_saved_cameras
+from saved_cameras import load_saved_views, saved_view_file, upsert_saved_view, write_saved_views
 
 from . import Widget
 from .cameras import Camera
@@ -30,12 +30,14 @@ class SavedViews(Widget):
         self.current_saved_view = -1
         self.saved_views: list[CameraInfo] = []
         self.saved_view_labels: list[str] = []
-        self._pending_save_view_name: Optional[str] = None
+        self._pending_saved_view_name: Optional[str] = None
+        self._pending_delete_saved_view: Optional[tuple[str, str]] = None
+        self._pending_clear_all_saved_views = False
         self._pending_selection: Optional[tuple[Optional[str], str]] = None
         self._saved_views_sent = False
         self._saved_views_dirty = False
-        self.saved_view_model_file = saved_camera_file(model_path)
-        self.saved_view_source_file = saved_camera_file(source_path)
+        self.saved_view_model_file = saved_view_file(model_path)
+        self.saved_view_source_file = saved_view_file(source_path)
         self.saved_view_write_scope = "model" if self.saved_view_model_file is not None else "source"
         self.saved_view_write_file = (
             self.saved_view_model_file if self.saved_view_model_file is not None else self.saved_view_source_file
@@ -45,9 +47,16 @@ class SavedViews(Widget):
         super().__init__(mode)
         self.load_from_disk()
 
+    def _mark_saved_views_changed(self):
+        self._saved_views_sent = False
+        self._saved_views_dirty = True
+
+    def _scope_for_index(self, index: int) -> str:
+        return "model" if index < len(self.model_saved_views) else "source"
+
     def _selected_saved_view_key(self) -> Optional[tuple[str, str]]:
         if 0 <= self.current_saved_view < len(self.saved_views):
-            scope = "model" if self.current_saved_view < len(self.model_saved_views) else "source"
+            scope = self._scope_for_index(self.current_saved_view)
             return scope, self.saved_views[self.current_saved_view].image_name
         return None
 
@@ -73,7 +82,7 @@ class SavedViews(Widget):
         for idx, view in enumerate(self.saved_views):
             if view.image_name != preferred_name:
                 continue
-            scope = "model" if idx < len(self.model_saved_views) else "source"
+            scope = self._scope_for_index(idx)
             if preferred_scope is None or scope == preferred_scope:
                 self.current_saved_view = idx
                 break
@@ -92,7 +101,7 @@ class SavedViews(Widget):
             if norm_path in seen_paths:
                 continue
             seen_paths.add(norm_path)
-            views = load_saved_cameras(path)
+            views = load_saved_views(path)
             if scope == "model":
                 self.model_saved_views = views
             else:
@@ -106,6 +115,29 @@ class SavedViews(Widget):
 
     def clear_selection(self):
         self.current_saved_view = -1
+
+    def _clear_saved_views_state(self):
+        self.saved_view_name = ""
+        self.model_saved_views = []
+        self.source_saved_views = []
+        self._refresh_saved_view_list()
+
+    def _current_view_matches_saved_view(self, saved_view: CameraInfo) -> bool:
+        current_origin = np.asarray(self.camera_widget.origin)
+        current_rotation = np.asarray(self.camera_widget.to_world[:3, :3])
+        return (
+            np.array_equal(current_origin, np.asarray(saved_view.origin))
+            and np.array_equal(current_rotation, np.asarray(saved_view.R))
+            and self.camera_widget.fov_x == saved_view.fov_x
+            and self.camera_widget.fov_y == saved_view.fov_y
+        )
+
+    def _sync_active_saved_view(self):
+        if not (0 <= self.current_saved_view < len(self.saved_views)):
+            self.current_saved_view = -1
+            return
+        if not self._current_view_matches_saved_view(self.saved_views[self.current_saved_view]):
+            self.current_saved_view = -1
 
     def _capture_current_view(self, name: str) -> CameraInfo:
         return CameraInfo(
@@ -135,22 +167,22 @@ class SavedViews(Widget):
         target_list = (
             self.model_saved_views if self.saved_view_write_scope == "model" else self.source_saved_views
         )
-        updated_target_list = upsert_saved_camera(target_list, saved_view)
+        updated_target_list = upsert_saved_view(target_list, saved_view)
         if self.saved_view_write_scope == "model":
             self.model_saved_views = updated_target_list
         else:
             self.source_saved_views = updated_target_list
 
         try:
-            write_saved_cameras(self.saved_view_write_file, updated_target_list)
+            write_saved_views(self.saved_view_write_file, updated_target_list)
         except OSError as exc:
             self.saved_view_status = f"Failed to save view '{name}': {exc}"
             return False
 
-        self.saved_view_name = name
+        self.saved_view_name = ""
         self.saved_view_status = f"Saved '{name}' to {os.path.basename(self.saved_view_write_file)}"
         self._refresh_saved_view_list(preferred_key=(self.saved_view_write_scope, saved_view.image_name))
-        self._saved_views_dirty = True
+        self._mark_saved_views_changed()
         return True
 
     def _queue_save_current_view(self):
@@ -160,11 +192,85 @@ class SavedViews(Widget):
             return
 
         if self.mode == ViewerMode.CLIENT:
-            self._pending_save_view_name = name
+            self._pending_saved_view_name = name
             self._pending_selection = (None, name)
+            self.saved_view_name = ""
             self.saved_view_status = f"Saving view '{name}'..."
         else:
             self._save_current_view(name)
+
+    def _delete_saved_view(self, scope: str, name: str) -> bool:
+        target_list = self.model_saved_views if scope == "model" else self.source_saved_views
+        updated_target_list = [view for view in target_list if view.image_name != name]
+        if len(updated_target_list) == len(target_list):
+            self.saved_view_status = f"Could not find saved view '{name}'."
+            return False
+
+        target_file = self.saved_view_model_file if scope == "model" else self.saved_view_source_file
+        if target_file is None:
+            self.saved_view_status = f"No {scope} saved views file is available."
+            return False
+
+        try:
+            write_saved_views(target_file, updated_target_list)
+        except OSError as exc:
+            self.saved_view_status = f"Failed to delete view '{name}': {exc}"
+            return False
+
+        if scope == "model":
+            self.model_saved_views = updated_target_list
+        else:
+            self.source_saved_views = updated_target_list
+
+        self.saved_view_status = f"Deleted view '{name}'."
+        self.saved_view_name = ""
+        self._refresh_saved_view_list()
+        self._mark_saved_views_changed()
+        return True
+
+    def _queue_delete_selected_view(self):
+        if not (0 <= self.current_saved_view < len(self.saved_views)):
+            return
+
+        scope, name = self._selected_saved_view_key()
+        if self.mode == ViewerMode.CLIENT:
+            self._pending_delete_saved_view = (scope, name)
+            self.saved_view_status = f"Deleting view '{name}'..."
+        else:
+            self._delete_saved_view(scope, name)
+
+    def _clear_all_saved_views(self) -> bool:
+        try:
+            seen_paths = set()
+            for path, views_attr in (
+                (self.saved_view_model_file, "model_saved_views"),
+                (self.saved_view_source_file, "source_saved_views"),
+            ):
+                if path is None:
+                    continue
+                norm_path = os.path.normcase(os.path.abspath(path))
+                if norm_path in seen_paths:
+                    setattr(self, views_attr, [])
+                    continue
+                seen_paths.add(norm_path)
+                write_saved_views(path, [])
+                setattr(self, views_attr, [])
+        except OSError as exc:
+            self.saved_view_status = f"Failed to clear saved views: {exc}"
+            return False
+
+        self._clear_saved_views_state()
+        self.saved_view_status = "Deleted all saved views."
+        self._mark_saved_views_changed()
+        return True
+
+    def _queue_clear_all_saved_views(self):
+        if self.mode == ViewerMode.CLIENT:
+            self._pending_clear_all_saved_views = True
+            self._clear_saved_views_state()
+            self.saved_view_status = "Deleted all saved views."
+        else:
+            self._clear_all_saved_views()
 
     def _set_saved_views_from_payload(self, model_payload: list[dict], source_payload: list[dict]):
         self.model_saved_views = [CameraInfo.from_json(view_data) for view_data in model_payload]
@@ -178,13 +284,13 @@ class SavedViews(Widget):
             return False
 
         saved_view = self.saved_views[index]
-        self.camera_widget.set_pose(saved_view.R, np.asarray(saved_view.origin, dtype=np.float32))
-        self.camera_widget.fov_y = float(saved_view.fov_y)
-        self.camera_widget.compute_fov_x()
+        self.camera_widget.set(saved_view)
         self.current_saved_view = index
+        self.saved_view_name = saved_view.image_name or ""
         return True
 
     def show_gui(self) -> bool:
+        self._sync_active_saved_view()
         imgui.separator_text("Select Saved View")
         style = imgui.get_style()
         button_width = imgui.calc_text_size("Save").x + 2 * style.frame_padding.x
@@ -206,6 +312,8 @@ class SavedViews(Widget):
             else ""
         )
         has_saved_views = len(self.saved_views) > 0
+        dropdown_width = max(80.0, imgui.get_content_region_avail().x - (imgui.calc_text_size("Delete").x + 2 * style.frame_padding.x + style.item_spacing.x))
+        imgui.set_next_item_width(dropdown_width)
         if not has_saved_views:
             imgui.begin_disabled()
         if imgui.begin_combo("##saved_view_picker", preview_label):
@@ -217,19 +325,49 @@ class SavedViews(Widget):
                 if is_selected:
                     imgui.set_item_default_focus()
             imgui.end_combo()
+        imgui.same_line()
+        delete_disabled = self.current_saved_view == -1
+        if delete_disabled:
+            imgui.begin_disabled()
+        if imgui.button("Delete"):
+            self._queue_delete_selected_view()
+        if delete_disabled:
+            imgui.end_disabled()
         if not has_saved_views:
             imgui.end_disabled()
+
+        if imgui.button("Delete All"):
+            imgui.open_popup("Confirm Clear Saved Views")
+        imgui.set_next_window_size(imgui.ImVec2(520, 120), imgui.Cond_.appearing)
+        popup_open, _ = imgui.begin_popup_modal("Confirm Clear Saved Views")
+        if popup_open:
+            imgui.text_wrapped("Are you sure you want to delete all saved views?")
+            if imgui.button("Yes, Delete All"):
+                self._queue_clear_all_saved_views()
+                imgui.close_current_popup()
+            imgui.same_line()
+            if imgui.button("Cancel"):
+                imgui.close_current_popup()
+            imgui.end_popup()
 
         if self.saved_view_status:
             imgui.text_wrapped(self.saved_view_status)
         return applied_view
 
     def client_send(self):
-        if self._pending_save_view_name is None:
+        payload = {}
+        if self._pending_saved_view_name is not None:
+            payload["save_view_name"] = self._pending_saved_view_name
+            self._pending_saved_view_name = None
+        if self._pending_delete_saved_view is not None:
+            payload["delete_saved_view_scope"] = self._pending_delete_saved_view[0]
+            payload["delete_saved_view_name"] = self._pending_delete_saved_view[1]
+            self._pending_delete_saved_view = None
+        if self._pending_clear_all_saved_views:
+            payload["clear_all_saved_views"] = True
+            self._pending_clear_all_saved_views = False
+        if not payload:
             return None, None
-
-        payload = {"save_view_name": self._pending_save_view_name}
-        self._pending_save_view_name = None
         return None, payload
 
     def client_recv(self, _, text):
@@ -253,8 +391,14 @@ class SavedViews(Widget):
         return None, text
 
     def server_recv(self, _, text):
-        if text and "save_view_name" in text:
+        if not text:
+            return
+        if "save_view_name" in text:
             self._save_current_view(text["save_view_name"])
+        if "delete_saved_view_scope" in text and "delete_saved_view_name" in text:
+            self._delete_saved_view(text["delete_saved_view_scope"], text["delete_saved_view_name"])
+        if text.get("clear_all_saved_views"):
+            self._clear_all_saved_views()
 
     def import_client_modules(self):
         global imgui
