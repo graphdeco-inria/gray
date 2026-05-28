@@ -407,4 +407,4 @@ if __name__ == "__main__":
 
         mode = ViewerMode.SERVER if cli.server else ViewerMode.LOCAL
         viewer = GaussianViewer(raytracer, train_cameras, test_cameras, mode=mode, image_scale=cli.image_scale)
-        viewer.run(port=cli.port)
+        viewer.run(ip="0.0.0.0" if cli.server else "localhost", port=cli.port)

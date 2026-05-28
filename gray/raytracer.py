@@ -1,6 +1,7 @@
 from gray.imports import *
 from gray.config import RaytracerConfig
-from gray.scene import SceneInfo, CameraInfo, BasicPointCloud
+from gray.camera import CameraInfo
+from gray.scene import SceneInfo, BasicPointCloud
 from gray.mlp import PreMLP, PostMLP
 from gray.exposure_comp import ExposureComp
 

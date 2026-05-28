@@ -49,7 +49,7 @@ class Viewer(ABC):
 
     def _setup(self):
         """ Go over all of the widgets and initialize them """
-        for _, widget in vars(self).items():
+        for _, widget in list(vars(self).items()):
             if isinstance(widget, Widget):
                 widget.setup()
                 self.widget_id_to_widget[widget.widget_id] = widget

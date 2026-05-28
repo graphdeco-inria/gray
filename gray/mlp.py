@@ -1,5 +1,5 @@
 from gray.config import Config
-from gray.scene import CameraInfo
+from gray.camera import CameraInfo
 
 import torch
 import torch.nn as nn
