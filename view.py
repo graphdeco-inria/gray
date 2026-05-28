@@ -81,13 +81,13 @@ class GaussianViewer(Viewer):
         self.point_view = TorchImage(self.mode)
 
         # * Render modes
-        self.render_modes = ["Splats"]
+        self.render_modes = ["Gaussians"]
         if self.raytracer is not None:
             if self.raytracer.cfg.render_depth:
                 self.render_modes.append("Depth")
             if not self.training and not self.raytracer.cfg.post_mlp:
                 self.render_modes.append("Ellipsoids")
-        self.render_mode = "Splats"
+        self.render_mode = "Gaussians"
 
         # * Render settings
         self.scaling_modifier = 1.0
@@ -117,7 +117,7 @@ class GaussianViewer(Viewer):
             is_test=False,
         )
 
-        if self.render_mode in ["Splats", "Depth", "Ellipsoids"]:
+        if self.render_mode in ["Gaussians", "Depth", "Ellipsoids"]:
             start = torch.cuda.Event(enable_timing=True)
             end = torch.cuda.Event(enable_timing=True)
             start.record()
@@ -136,7 +136,7 @@ class GaussianViewer(Viewer):
                         znear=self.znear,
                     ).clamp(0, 1)
 
-                if self.render_mode in ["Splats", "Ellipsoids"]:
+                if self.render_mode in ["Gaussians", "Ellipsoids"]:
                     net_image = render.moveaxis(0, -1)
                 else:
                     framebuffer = self.raytracer.cuda_module.get_framebuffer()
@@ -158,7 +158,7 @@ class GaussianViewer(Viewer):
             self.render_mode = self.render_modes[render_mode_choice]
 
             imgui.separator_text("Render Settings")
-            if self.render_mode in ["Splats", "Depth", "Ellipsoids"]:
+            if self.render_mode in ["Gaussians", "Depth", "Ellipsoids"]:
                 scaling_changed, self.scaling_modifier = imgui.drag_float(
                     "Scaling Modifier", self.scaling_modifier, v_min=0, v_max=2, v_speed=0.01
                 )
