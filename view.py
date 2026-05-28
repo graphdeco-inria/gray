@@ -338,6 +338,7 @@ class GaussianViewer(Viewer):
     def onconnect(self, _):
         self._cameras_sent = False
         self.saved_views_widget.onconnect()
+        self.point_view.reset_remote_stats()
 
     def server_send(self):
         text = {"render_modes": self.render_modes}
@@ -366,7 +367,15 @@ class GaussianViewer(Viewer):
                 self.camera_widget.set(init_cam)
 
     def show_status(self):
-        imgui.text(f"{self.camera_widget.res_x} × {self.camera_widget.res_y}")
+        status = f"{self.camera_widget.res_x} x {self.camera_widget.res_y}"
+        if self.mode is ViewerMode.CLIENT:
+            remote_stats = self.point_view.remote_stats()
+            status += (
+                f" | RX FPS: {remote_stats['received_fps']:.1f}"
+                f" | Presented FPS: {remote_stats['presented_fps']:.1f}"
+                f" | Dropped frames: {remote_stats['dropped_frames']}"
+            )
+        imgui.text(status)
 
     def server_recv(self, _, text):
         new_scaling = text["scaling_modifier"]
