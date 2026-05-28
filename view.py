@@ -18,8 +18,9 @@ from viewer.widgets.monitor import PerformanceMonitor
 from dataclasses import dataclass
 import tyro
 from tyro.conf import subcommand, arg
-from typing import Annotated, List, Optional
+from typing import Annotated, List, Literal, Optional
 import json
+import numpy as np
 
 
 @dataclass
@@ -30,6 +31,8 @@ class ViewerCLI:
     client: Optional[str] = None # * Connect as a client to the given server IP address
     port: int = 6009
     image_scale: Annotated[float, arg(aliases=["-x"])] = 1.0  # * Image scale factor; >1 = upsampling, <1 = downsampling
+    remote_codec: Literal["jpeg", "raw"] = "jpeg"
+    jpeg_quality: int = 80
 
 class GaussianViewer(Viewer):
     def __init__(
@@ -42,6 +45,8 @@ class GaussianViewer(Viewer):
         image_scale: float = 1.0,
         model_path: Optional[str] = None,
         source_path: Optional[str] = None,
+        remote_codec: Literal["jpeg", "raw"] = "jpeg",
+        jpeg_quality: int = 80,
     ):
         super().__init__(mode)
         self.window_title = "Gaussian Viewer"
@@ -54,6 +59,31 @@ class GaussianViewer(Viewer):
         self.image_scale = image_scale
         self.model_path = model_path
         self.source_path = source_path
+        self.remote_codec = remote_codec
+        self.jpeg_quality = jpeg_quality
+
+    def _camera_matches_view(self, cam_info: Optional["CameraInfo"]) -> bool:
+        if cam_info is None:
+            return False
+        return (
+            np.array_equal(self.camera_widget.origin, cam_info.origin)
+            and np.array_equal(self.camera_widget.to_world[:3, :3], cam_info.R)
+            and self.camera_widget.fov_x == cam_info.fov_x
+            and self.camera_widget.fov_y == cam_info.fov_y
+        )
+
+    def _sync_active_colmap_view(self):
+        if 0 <= self.current_train_cam < len(self.train_cameras or []):
+            if self._camera_matches_view(self.train_cameras[self.current_train_cam]):
+                self.current_test_cam = -1
+                return
+            self.current_train_cam = -1
+
+        if 0 <= self.current_test_cam < len(self.test_cameras or []):
+            if self._camera_matches_view(self.test_cameras[self.current_test_cam]):
+                self.current_train_cam = -1
+                return
+            self.current_test_cam = -1
 
     def import_server_modules(self):
         global torch
@@ -88,7 +118,11 @@ class GaussianViewer(Viewer):
             model_path=self.model_path,
             source_path=self.source_path,
         )
-        self.point_view = TorchImage(self.mode)
+        self.point_view = TorchImage(
+            self.mode,
+            remote_codec=self.remote_codec,
+            jpeg_quality=self.jpeg_quality,
+        )
 
         # * Render modes
         self.render_modes = ["Gaussians"]
@@ -162,6 +196,7 @@ class GaussianViewer(Viewer):
 
     def show_gui(self):
         with imgui_ctx.begin(f"Point View Settings"):
+            self._sync_active_colmap_view()
             _, render_mode_choice = imgui.list_box(
                 "Render Mode", self.render_modes.index(self.render_mode), self.render_modes
             )
@@ -384,7 +419,14 @@ if __name__ == "__main__":
 
     if cli.client is not None:
         # * Client mode: no model loading, just connect to the server
-        viewer = GaussianViewer(None, [], [], mode=ViewerMode.CLIENT)
+        viewer = GaussianViewer(
+            None,
+            [],
+            [],
+            mode=ViewerMode.CLIENT,
+            remote_codec=cli.remote_codec,
+            jpeg_quality=cli.jpeg_quality,
+        )
         viewer.run(ip=cli.client, port=cli.port)
     else:
         if cli.model_path is None:
@@ -433,5 +475,7 @@ if __name__ == "__main__":
             image_scale=cli.image_scale,
             model_path=cfg.model_path,
             source_path=cfg.source_path,
+            remote_codec=cli.remote_codec,
+            jpeg_quality=cli.jpeg_quality,
         )
         viewer.run(ip="0.0.0.0" if cli.server else "localhost", port=cli.port)

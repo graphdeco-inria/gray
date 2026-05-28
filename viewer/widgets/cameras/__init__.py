@@ -188,8 +188,8 @@ class Camera(Widget):
         self.right = self.right / np.linalg.norm(self.right)
 
     def set(self, cam_info: "CameraInfo"):
-        self.origin = cam_info.origin
-        mat = cam_info.R
+        self.origin = np.asarray(cam_info.origin, dtype=np.float32).copy()
+        mat = np.asarray(cam_info.R, dtype=np.float32).copy()
         self.forward = mat[:3, 2]
         self.forward = self.forward / np.linalg.norm(self.forward)
         self.up = -mat[:3, 1]

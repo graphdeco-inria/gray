@@ -30,10 +30,7 @@ class SavedViews(Widget):
         self.current_saved_view = -1
         self.saved_views: list[CameraInfo] = []
         self.saved_view_labels: list[str] = []
-        self._pending_saved_view_name: Optional[str] = None
-        self._pending_delete_saved_view: Optional[tuple[str, str]] = None
-        self._pending_clear_all_saved_views = False
-        self._pending_selection: Optional[tuple[Optional[str], str]] = None
+        self._outbound_action: Optional[dict] = None
         self._saved_views_sent = False
         self._saved_views_dirty = False
         self.saved_view_model_file = saved_view_file(model_path)
@@ -185,15 +182,14 @@ class SavedViews(Widget):
         self._mark_saved_views_changed()
         return True
 
-    def _queue_save_current_view(self):
+    def save_current_view(self):
         name = self.saved_view_name.strip()
         if not name:
             self.saved_view_status = "Enter a name before saving a view."
             return
 
         if self.mode == ViewerMode.CLIENT:
-            self._pending_saved_view_name = name
-            self._pending_selection = (None, name)
+            self._outbound_action = {"save_view_name": name}
             self.saved_view_name = ""
             self.saved_view_status = f"Saving view '{name}'..."
         else:
@@ -228,13 +224,16 @@ class SavedViews(Widget):
         self._mark_saved_views_changed()
         return True
 
-    def _queue_delete_selected_view(self):
+    def delete_selected_view(self):
         if not (0 <= self.current_saved_view < len(self.saved_views)):
             return
 
         scope, name = self._selected_saved_view_key()
         if self.mode == ViewerMode.CLIENT:
-            self._pending_delete_saved_view = (scope, name)
+            self._outbound_action = {
+                "delete_saved_view_scope": scope,
+                "delete_saved_view_name": name,
+            }
             self.saved_view_status = f"Deleting view '{name}'..."
         else:
             self._delete_saved_view(scope, name)
@@ -264,9 +263,9 @@ class SavedViews(Widget):
         self._mark_saved_views_changed()
         return True
 
-    def _queue_clear_all_saved_views(self):
+    def clear_all_saved_views(self):
         if self.mode == ViewerMode.CLIENT:
-            self._pending_clear_all_saved_views = True
+            self._outbound_action = {"clear_all_saved_views": True}
             self._clear_saved_views_state()
             self.saved_view_status = "Deleted all saved views."
         else:
@@ -275,9 +274,7 @@ class SavedViews(Widget):
     def _set_saved_views_from_payload(self, model_payload: list[dict], source_payload: list[dict]):
         self.model_saved_views = [CameraInfo.from_json(view_data) for view_data in model_payload]
         self.source_saved_views = [CameraInfo.from_json(view_data) for view_data in source_payload]
-        preferred_key = self._pending_selection
-        self._refresh_saved_view_list(preferred_key=preferred_key)
-        self._pending_selection = None
+        self._refresh_saved_view_list()
 
     def apply_saved_view(self, index: int) -> bool:
         if not (0 <= index < len(self.saved_views)):
@@ -286,7 +283,6 @@ class SavedViews(Widget):
         saved_view = self.saved_views[index]
         self.camera_widget.set(saved_view)
         self.current_saved_view = index
-        self.saved_view_name = saved_view.image_name or ""
         return True
 
     def show_gui(self) -> bool:
@@ -303,7 +299,7 @@ class SavedViews(Widget):
         )
         imgui.same_line()
         if imgui.button("Save"):
-            self._queue_save_current_view()
+            self.save_current_view()
 
         applied_view = False
         preview_label = (
@@ -312,7 +308,7 @@ class SavedViews(Widget):
             else ""
         )
         has_saved_views = len(self.saved_views) > 0
-        dropdown_width = max(80.0, imgui.get_content_region_avail().x - (imgui.calc_text_size("Delete").x + 2 * style.frame_padding.x + style.item_spacing.x))
+        dropdown_width = input_width
         imgui.set_next_item_width(dropdown_width)
         if not has_saved_views:
             imgui.begin_disabled()
@@ -330,44 +326,35 @@ class SavedViews(Widget):
         if delete_disabled:
             imgui.begin_disabled()
         if imgui.button("Delete"):
-            self._queue_delete_selected_view()
+            self.delete_selected_view()
         if delete_disabled:
             imgui.end_disabled()
         if not has_saved_views:
             imgui.end_disabled()
 
-        if imgui.button("Delete All"):
+        if self.saved_view_status:
+            imgui.text_wrapped(self.saved_view_status)
+
+        if imgui.button("Delete All Saved Views"):
             imgui.open_popup("Confirm Clear Saved Views")
         imgui.set_next_window_size(imgui.ImVec2(520, 120), imgui.Cond_.appearing)
         popup_open, _ = imgui.begin_popup_modal("Confirm Clear Saved Views")
         if popup_open:
             imgui.text_wrapped("Are you sure you want to delete all saved views?")
             if imgui.button("Yes, Delete All"):
-                self._queue_clear_all_saved_views()
+                self.clear_all_saved_views()
                 imgui.close_current_popup()
             imgui.same_line()
             if imgui.button("Cancel"):
                 imgui.close_current_popup()
             imgui.end_popup()
-
-        if self.saved_view_status:
-            imgui.text_wrapped(self.saved_view_status)
         return applied_view
 
     def client_send(self):
-        payload = {}
-        if self._pending_saved_view_name is not None:
-            payload["save_view_name"] = self._pending_saved_view_name
-            self._pending_saved_view_name = None
-        if self._pending_delete_saved_view is not None:
-            payload["delete_saved_view_scope"] = self._pending_delete_saved_view[0]
-            payload["delete_saved_view_name"] = self._pending_delete_saved_view[1]
-            self._pending_delete_saved_view = None
-        if self._pending_clear_all_saved_views:
-            payload["clear_all_saved_views"] = True
-            self._pending_clear_all_saved_views = False
-        if not payload:
+        if self._outbound_action is None:
             return None, None
+        payload = self._outbound_action
+        self._outbound_action = None
         return None, payload
 
     def client_recv(self, _, text):
