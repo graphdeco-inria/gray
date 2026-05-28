@@ -173,7 +173,7 @@ The viewer can be used remotely, in which case a server renders the images and d
 ```
 python view.py --server -m $MODEL_DIR
 ```
-On the client, you can install the minimal required dependencies with `uv sync --only-group viewer` and then run 
+On the client, you can install the minimal required dependencies with `uv venv && uv pip install -r viewer/requirements.txt` and then run 
 ```
 python view.py --client $SERVER_IP
 ```
