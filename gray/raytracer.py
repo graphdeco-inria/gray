@@ -31,7 +31,7 @@ class Raytracer(torch.nn.Module):
         image_height: int,
         inference_only: bool = False,
     ):
-        "Note that you should call `from_ply` or `from_point_cloud` to initialize the raytracer with actual data."
+        "Note that you should call `from_safetensors` or `from_point_cloud` to initialize the raytracer with actual data."
         super().__init__()
 
         self.cfg = cfg
@@ -342,11 +342,10 @@ class Raytracer(torch.nn.Module):
         inference_only: bool = False,
     ):
         state_dict = safetensors.torch.load_file(path)
-        del state_dict["image_width"]
-        del state_dict["image_height"]
-
-        # * Older checkpoints may include bg_color, but config is now the source of truth.
+        # * Legacy support, values now stored in config.json and cameras.json
         state_dict.pop("bg_color", None)
+        state_dict.pop("image_width", None)
+        state_dict.pop("image_height", None)
 
         num_points = state_dict["mean"].shape[0]
         raytracer = Raytracer(
@@ -361,21 +360,26 @@ class Raytracer(torch.nn.Module):
         gaussians.rotation.copy_(state_dict["rotation"])
         gaussians.scale.copy_(state_dict["scale"])
         gaussians.opacity.copy_(state_dict["opacity"])
-        gaussians.channels.copy_(state_dict["channels"])
-        gaussians.sh_coeffs_dc.copy_(state_dict["sh_coeffs_dc"])
         if cfg.sh:
+            gaussians.channels.zero_()
+            gaussians.sh_coeffs_dc.copy_(state_dict["sh_coeffs_dc"])
             gaussians.sh_coeffs_rest.copy_(state_dict["sh_coeffs_rest"])
-        gaussians.current_sh_degree.copy_(state_dict["current_sh_degree"])
+            gaussians.current_sh_degree.copy_(state_dict["current_sh_degree"])
+        else:
+            gaussians.channels.copy_(state_dict["channels"])
+            gaussians.sh_coeffs_dc.zero_()
+            gaussians.sh_coeffs_rest.zero_()
+            gaussians.current_sh_degree.zero_()
         raytracer.cuda_module.rebuild_bvh()
 
         del state_dict["mean"]
         del state_dict["rotation"]
         del state_dict["scale"]
         del state_dict["opacity"]
-        del state_dict["channels"]
-        del state_dict["sh_coeffs_dc"]
-        del state_dict["sh_coeffs_rest"]
-        del state_dict["current_sh_degree"]
+        state_dict.pop("channels", None)
+        state_dict.pop("sh_coeffs_dc", None)
+        state_dict.pop("sh_coeffs_rest", None)
+        state_dict.pop("current_sh_degree", None)
 
         if cfg.pre_mlp:
             raytracer.pre_mlp.initialize()
@@ -390,132 +394,13 @@ class Raytracer(torch.nn.Module):
             "rotation": gaussians.rotation,
             "scale": gaussians.scale,
             "opacity": gaussians.opacity,
-            "channels": gaussians.channels,
-            "sh_coeffs_dc": gaussians.sh_coeffs_dc,
-            "sh_coeffs_rest": gaussians.sh_coeffs_rest,
-            "current_sh_degree": gaussians.current_sh_degree,
-            "image_width": torch.tensor(self.image_width),
-            "image_height": torch.tensor(self.image_height),
         }
+        if self.cfg.sh:
+            tensors["sh_coeffs_dc"] = gaussians.sh_coeffs_dc
+            tensors["sh_coeffs_rest"] = gaussians.sh_coeffs_rest
+            tensors["current_sh_degree"] = gaussians.current_sh_degree
+        else:
+            tensors["channels"] = gaussians.channels
 
         path = os.path.join(model_path, f"gaussians_{iteration:05d}.safetensors")
         safetensors.torch.save_file({**self.state_dict(), **tensors}, path)
-
-    @staticmethod
-    def from_ply(
-        cfg: RaytracerConfig,
-        path: str,
-        image_width: int,
-        image_height: int,
-        inference_only: bool = False,
-    ):
-        plydata = PlyData.read(path)
-        vertex = plydata["vertex"].data
-
-        points = np.stack([vertex["x"], vertex["y"], vertex["z"]], axis=1).astype(np.float32)
-        opacities = np.expand_dims(vertex["opacity"], axis=1).astype(np.float32)
-        rotations = np.stack(
-            [vertex["rot_0"], vertex["rot_1"], vertex["rot_2"], vertex["rot_3"]], axis=1
-        ).astype(np.float32)
-        scales = np.stack([vertex["scale_0"], vertex["scale_1"], vertex["scale_2"]], axis=1).astype(
-            np.float32
-        )
-
-        raytracer = Raytracer(
-            cfg,
-            points.shape[0],
-            image_width,
-            image_height,
-            inference_only=inference_only,
-        )
-        gaussians = raytracer.cuda_module.get_gaussians()
-        gaussians.mean.copy_(torch.from_numpy(points))
-        gaussians.opacity.copy_(torch.from_numpy(opacities))
-        gaussians.rotation.copy_(torch.from_numpy(rotations))
-        gaussians.scale.copy_(torch.from_numpy(scales))
-
-        if cfg.sh:
-            sh_dc = np.stack([vertex["f_dc_0"], vertex["f_dc_1"], vertex["f_dc_2"]], axis=1).astype(
-                np.float32
-            )
-            sh_dc = sh_dc[:, None, :]
-            f_rest_keys = [k for k in vertex.dtype.fields if k.startswith("f_rest_")]
-            sh_rest = (
-                np.stack([vertex[k] for k in f_rest_keys], axis=1)
-                .astype(np.float32)
-                .reshape(points.shape[0], -1, 3)
-            )
-            gaussians.sh_coeffs_dc.copy_(torch.from_numpy(sh_dc))
-            gaussians.sh_coeffs_rest.copy_(torch.from_numpy(sh_rest))
-            gaussians.current_sh_degree.fill_(cfg.sh_max_degree)
-            gaussians.channels.zero_()
-        else:
-            channels = np.stack(
-                [vertex["f_dc_0"], vertex["f_dc_1"], vertex["f_dc_2"]], axis=1
-            ).astype(np.float32)
-            gaussians.channels.copy_(torch.from_numpy(channels))
-
-        raytracer.cuda_module.rebuild_bvh()
-        return raytracer
-
-    def save_ply(self, model_path: str, iteration: int):
-        """
-        Save the current state of the raytracer's gaussians to a PLY file,
-        including SH rest coefficients following the 3DGS convention.
-        """
-        gaussians = self.cuda_module.get_gaussians()
-        points = gaussians.mean.cpu().numpy()
-        channels = gaussians.channels.cpu().numpy()
-        opacities = gaussians.opacity.cpu().numpy()
-        rotations = gaussians.rotation.cpu().numpy()
-        scales = gaussians.scale.cpu().numpy()
-        if self.cfg.sh:
-            sh_dc = gaussians.sh_coeffs_dc.cpu().numpy()
-            sh_rest = gaussians.sh_coeffs_rest.cpu().numpy()
-
-        dtype_fields = [
-            ("x", "f4"),
-            ("y", "f4"),
-            ("z", "f4"),
-            ("opacity", "f4"),
-            ("rot_0", "f4"),
-            ("rot_1", "f4"),
-            ("rot_2", "f4"),
-            ("rot_3", "f4"),
-            ("scale_0", "f4"),
-            ("scale_1", "f4"),
-            ("scale_2", "f4"),
-            ("f_dc_0", "f4"),
-            ("f_dc_1", "f4"),
-            ("f_dc_2", "f4"),
-        ]
-        for i in range(sh_rest.shape[1] * sh_rest.shape[2]):
-            dtype_fields.append((f"f_rest_{i}", "f4"))
-
-        vertex = np.empty(points.shape[0], dtype=dtype_fields)
-        vertex["x"] = points[:, 0]
-        vertex["y"] = points[:, 1]
-        vertex["z"] = points[:, 2]
-        vertex["opacity"] = opacities[:, 0]
-        vertex["rot_0"] = rotations[:, 0]
-        vertex["rot_1"] = rotations[:, 1]
-        vertex["rot_2"] = rotations[:, 2]
-        vertex["rot_3"] = rotations[:, 3]
-        vertex["scale_0"] = scales[:, 0]
-        vertex["scale_1"] = scales[:, 1]
-        vertex["scale_2"] = scales[:, 2]
-        if self.cfg.sh:
-            vertex["f_dc_0"] = sh_dc[:, 0, 0]
-            vertex["f_dc_1"] = sh_dc[:, 0, 1]
-            vertex["f_dc_2"] = sh_dc[:, 0, 2]
-            for i in range(sh_rest.shape[1]):
-                vertex[f"f_rest_{3 * i}"] = sh_rest[:, i, 0]
-                vertex[f"f_rest_{3 * i + 1}"] = sh_rest[:, i, 1]
-                vertex[f"f_rest_{3 * i + 2}"] = sh_rest[:, i, 2]
-        else:
-            vertex["f_dc_0"] = channels[:, 0]
-            vertex["f_dc_1"] = channels[:, 1]
-            vertex["f_dc_2"] = channels[:, 2]
-
-        ply_element = PlyElement.describe(vertex, "vertex")
-        PlyData([ply_element]).write(f"{model_path}/gaussians_{iteration:05d}.ply")
