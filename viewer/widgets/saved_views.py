@@ -5,6 +5,7 @@
 import os
 from collections import Counter
 from typing import Optional
+import numpy as np
 
 from gray.camera import CameraInfo
 from saved_cameras import load_saved_views, saved_view_file, upsert_saved_view, write_saved_views
