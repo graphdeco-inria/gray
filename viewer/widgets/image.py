@@ -2,13 +2,54 @@
 # This file is licensed under the Apache 2.0 license in viewer/LICENSE.md.
 #
 
+import io
+
 import torch
 import numpy as np
+from PIL import Image as PILImage
 from . import Widget
 from OpenGL.GL import *
 from imgui_bundle import imgui
 from abc import abstractmethod
 from viewer.types import *
+
+
+def _to_uint8_numpy(img: np.ndarray) -> np.ndarray:
+    if img.dtype != np.uint8:
+        img = (np.clip(img, 0, 1) * 255).astype(np.uint8)
+    return np.ascontiguousarray(img)
+
+
+def _encode_remote_image(img: np.ndarray, codec: str, jpeg_quality: int):
+    img = _to_uint8_numpy(img)
+    if codec == "raw":
+        return memoryview(img.reshape(-1)), {"codec": "raw", "shape": tuple(img.shape)}
+
+    if codec == "jpeg":
+        buffer = io.BytesIO()
+        PILImage.fromarray(img, "RGB").save(
+            buffer,
+            format="JPEG",
+            quality=jpeg_quality,
+            optimize=False,
+            progressive=False,
+            subsampling=2,
+        )
+        return buffer.getvalue(), {"codec": "jpeg"}
+
+    raise ValueError(f"Unsupported remote image codec: {codec}")
+
+
+def _decode_remote_image(binary, text) -> np.ndarray:
+    codec = text.get("codec", "raw")
+    if codec == "raw":
+        return np.frombuffer(binary, dtype=np.uint8).reshape(text["shape"])
+
+    if codec == "jpeg":
+        with PILImage.open(io.BytesIO(binary)) as img:
+            return np.ascontiguousarray(img.convert("RGB"))
+
+    raise ValueError(f"Unsupported remote image codec: {codec}")
 
 def _cudaGetErrorEnum(error):
     if isinstance(error, driver.CUresult):
@@ -32,10 +73,12 @@ class Image(Widget):
     Base class for the image viewer widget. Each child class must override
     the '_upload' method to upload their image to the OpenGL texture.
     """
-    def __init__(self, mode: ViewerMode):
+    def __init__(self, mode: ViewerMode, remote_codec: str = "raw", jpeg_quality: int = 80):
         self.texture = Texture2D()
         self.img = None
         self.step_called = False
+        self.remote_codec = remote_codec
+        self.jpeg_quality = max(1, min(95, int(jpeg_quality)))
         super().__init__(mode)
 
     def setup(self):
@@ -105,14 +148,11 @@ class NumpyImage(Image):
     def server_send(self):
         if not self.step_called:
             return None, None
-        img = self.img
-        if img.dtype != np.uint8:
-            img = (np.clip(img, 0, 1) * 255).astype(np.uint8)
         self.step_called = False
-        return memoryview(np.ascontiguousarray(img.flatten())), {"shape": tuple(img.shape)}
+        return _encode_remote_image(self.img, self.remote_codec, self.jpeg_quality)
     
     def client_recv(self, binary, text):
-        self.img = np.frombuffer(binary, dtype=np.uint8).reshape(text["shape"])
+        self.img = _decode_remote_image(binary, text)
 
 
 # Check if 'cuda-python' and 'torch' are available
@@ -184,10 +224,10 @@ if enable_torch_image:
             if img.dtype != torch.uint8:
                 img = (torch.clip(img, 0, 1) * 255).byte()
             self.step_called = False
-            return memoryview(img.contiguous().flatten().cpu().numpy()), {"shape": tuple(img.shape)}
+            return _encode_remote_image(img.contiguous().cpu().numpy(), self.remote_codec, self.jpeg_quality)
 
         def client_recv(self, binary, text):
-            img = np.frombuffer(binary, dtype=np.uint8).reshape(text["shape"])
+            img = _decode_remote_image(binary, text)
             self.img = torch.from_numpy(img).to(0)
 
 else:
@@ -199,3 +239,4 @@ else:
                 img = img.detach().cpu().numpy()
             # Otherwise it's already a numpy array
             self.img = img
+            self.step_called = True
