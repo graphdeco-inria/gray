@@ -397,8 +397,9 @@ class GaussianViewer(Viewer):
                 f" | Dropped FPS: {remote_stats['dropped_fps']:.1f}"
             )
             text_width = imgui.calc_text_size(status).x
+            right_margin = 15.0 * imgui.get_font_size()
             imgui.same_line()
-            right_x = imgui.get_cursor_pos_x() + max(0.0, imgui.get_content_region_avail().x - text_width)
+            right_x = imgui.get_cursor_pos_x() + max(0.0, imgui.get_content_region_avail().x - text_width - right_margin)
             imgui.set_cursor_pos_x(right_x)
             imgui.text(status)
 
