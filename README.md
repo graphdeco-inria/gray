@@ -177,7 +177,7 @@ On the client, you can install the minimal required dependencies with `uv venv &
 ```
 python view.py --client $SERVER_IP
 ```
-The client does not require a GPU and all platforms are supported (Linux/Windows/Max). However note the remote viewer has low framerates due to network overhead.
+The client does not require a GPU and all platforms are supported (Linux/Windows/Max). 
 
 ### Fast Viewer
 Besides the Python viewer, which is designed for ease of development, a faster C++ viewer is also provided. It can be included during the build with

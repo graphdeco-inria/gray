@@ -59,7 +59,12 @@ class GaussianViewer(Viewer):
         self.model_path = model_path
         self.source_path = source_path
         self.remote_codec = remote_codec
-        self.jpeg_quality = jpeg_quality
+        self.jpeg_quality = max(1, min(100, int(jpeg_quality)))
+
+    def _set_jpeg_quality(self, jpeg_quality: int):
+        self.jpeg_quality = max(1, min(100, int(jpeg_quality)))
+        if hasattr(self, "point_view"):
+            self.point_view.jpeg_quality = self.jpeg_quality
 
     def _reset_camera_motion(self):
         reset_motion = getattr(self.camera_widget, "reset_motion", None)
@@ -250,6 +255,16 @@ class GaussianViewer(Viewer):
                     if imgui.is_item_hovered() and imgui.is_mouse_clicked(imgui.MouseButton_.right):
                         self.ellipsoid_min_opacity = 0.0
 
+            if self.mode is ViewerMode.CLIENT and self.remote_codec == "jpeg":
+                imgui.separator_text("Remote Settings")
+                quality_changed, jpeg_quality = imgui.slider_int(
+                    "JPEG Quality", self.jpeg_quality, v_min=1, v_max=100
+                )
+                if quality_changed:
+                    self._set_jpeg_quality(jpeg_quality)
+                if imgui.is_item_hovered() and imgui.is_mouse_clicked(imgui.MouseButton_.right):
+                    self._set_jpeg_quality(80)
+
             imgui.separator_text("Camera Settings")
             self.camera_widget.show_gui()
 
@@ -330,6 +345,7 @@ class GaussianViewer(Viewer):
             "depth_min": float(self.depth_min),
             "depth_max": float(self.depth_max),
             "ellipsoid_min_opacity": float(self.ellipsoid_min_opacity),
+            "jpeg_quality": int(self.jpeg_quality),
         }
 
     def onconnect(self, _):
@@ -338,7 +354,11 @@ class GaussianViewer(Viewer):
         self.point_view.reset_remote_stats()
 
     def server_send(self):
-        text = {"render_modes": self.render_modes}
+        text = {
+            "render_modes": self.render_modes,
+            "remote_codec": self.remote_codec,
+            "jpeg_quality": int(self.jpeg_quality),
+        }
         # * Send the cameras list once per connection so the client can control cameras
         if not getattr(self, "_cameras_sent", False):
             text["train_cameras"] = [c.to_json() for c in self.train_cameras]
@@ -353,6 +373,10 @@ class GaussianViewer(Viewer):
             self.render_modes = text["render_modes"]
             if self.render_mode not in self.render_modes:
                 self.render_mode = self.render_modes[0]
+        if "remote_codec" in text:
+            self.remote_codec = text["remote_codec"]
+        if "jpeg_quality" in text:
+            self._set_jpeg_quality(int(text["jpeg_quality"]))
         if "train_cameras" in text:
             self.train_cameras = [CameraInfo.from_json(c) for c in text["train_cameras"]]
             self.test_cameras = [CameraInfo.from_json(c) for c in text["test_cameras"]]
@@ -364,15 +388,19 @@ class GaussianViewer(Viewer):
                 self.camera_widget.set(init_cam)
 
     def show_status(self):
-        status = f"{self.camera_widget.res_x} x {self.camera_widget.res_y}"
+        imgui.text(f"{self.camera_widget.res_x} x {self.camera_widget.res_y}")
         if self.mode is ViewerMode.CLIENT:
             remote_stats = self.point_view.remote_stats()
-            status += (
-                f" | RX FPS: {remote_stats['received_fps']:.1f}"
+            status = (
+                f"RX FPS: {remote_stats['received_fps']:.1f}"
                 f" | Presented FPS: {remote_stats['presented_fps']:.1f}"
-                f" | Dropped frames: {remote_stats['dropped_frames']}"
+                f" | Dropped FPS: {remote_stats['dropped_fps']:.1f}"
             )
-        imgui.text(status)
+            text_width = imgui.calc_text_size(status).x
+            imgui.same_line()
+            right_x = imgui.get_cursor_pos_x() + max(0.0, imgui.get_content_region_avail().x - text_width)
+            imgui.set_cursor_pos_x(right_x)
+            imgui.text(status)
 
     def server_recv(self, _, text):
         new_scaling = text["scaling_modifier"]
@@ -388,6 +416,8 @@ class GaussianViewer(Viewer):
             self.depth_max = float(text["depth_max"])
         if "ellipsoid_min_opacity" in text:
             self.ellipsoid_min_opacity = float(text["ellipsoid_min_opacity"])
+        if "jpeg_quality" in text:
+            self._set_jpeg_quality(int(text["jpeg_quality"]))
 
 
 def process_depth_map(raw_depth, depth_min: float, depth_max: float):
