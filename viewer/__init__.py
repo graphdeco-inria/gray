@@ -1,3 +1,4 @@
+import gc
 import glfw
 import json
 import os
@@ -58,6 +59,10 @@ class Viewer(ABC):
             if isinstance(widget, Widget):
                 widget.setup()
                 self.widget_id_to_widget[widget.widget_id] = widget
+        # Move startup objects out of GC's reach so per-frame churn doesn't drag
+        # the whole static heap through periodic collections (kills jank bursts).
+        gc.collect()
+        gc.freeze()
 
     def _destroy(self):
         """ Go over all of the widgets and free any manually allocated objects """
@@ -192,20 +197,37 @@ class Viewer(ABC):
             self.show_gui()
             return
 
+        _t0 = time.monotonic()
+        _gap = _t0 - getattr(self, "_dbg_last_main", _t0)
+        self._dbg_last_main = _t0
+
         if self.mode is CLIENT and self.websocket is not None:
             try:
                 self._drain_client_recv(self.websocket)
             except ConnectionClosed:
                 self._disconnect_client("INFO: Server disconnected")
+        _t1 = time.monotonic()
 
         if self.mode & LOCAL_CLIENT:
             self.show_gui()
+        _t2 = time.monotonic()
 
         if self.mode is CLIENT and self.websocket is not None:
             try:
                 self._client_send(self.websocket)
             except ConnectionClosed:
                 self._disconnect_client("INFO: Server disconnected")
+        _t3 = time.monotonic()
+
+        if self.mode is CLIENT:
+            _frame_ms = (_t3 - _t0) * 1e3
+            _gap_ms = _gap * 1e3
+            if _gap_ms > 50.0 or _frame_ms > 50.0:
+                print(
+                    f"[slow] gap={_gap_ms:6.1f}ms frame={_frame_ms:6.1f}ms "
+                    f"(drain={(_t1-_t0)*1e3:5.1f} gui={(_t2-_t1)*1e3:5.1f} send={(_t3-_t2)*1e3:5.1f})",
+                    flush=True,
+                )
     
     def _server_loop(self, websocket: ServerConnection):
         """ Internal method which runs the server loop. """
@@ -216,6 +238,7 @@ class Viewer(ABC):
             return
         self.num_connections += 1
 
+        websocket.socket.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
         glfw.make_context_current(self.window)
         self.onconnect(websocket)
 
@@ -266,6 +289,7 @@ class Viewer(ABC):
                         proxy=None,
                         ping_interval=None,
                     )
+                    websocket.socket.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
                     print("INFO: Connected to server.")
                     self._last_client_packet = None
                     self.onconnect(websocket)
