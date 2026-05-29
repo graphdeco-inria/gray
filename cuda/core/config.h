@@ -12,6 +12,8 @@ struct Config {
     const float *eps_scale_grad;
     const floatK *background_channels;
     const bool *render_depth;
+    const bool *render_ellipsoids;
+    const float *ellipsoid_min_opacity;
     const bool *rays_from_python;
     const bool *zero_grads;
     const bool *enable_sh;
@@ -32,6 +34,8 @@ struct ConfigDataHolder : torch::CustomClassHolder {
     Tensor eps_scale_grad = torch::tensor({1e-12f}, CUDA_FLOAT32);
     Tensor background_channels = torch::zeros({CHANNELS}, CUDA_FLOAT32);
     Tensor render_depth = torch::tensor({false}, CUDA_BOOL);
+    Tensor render_ellipsoids = torch::tensor({false}, CUDA_BOOL);
+    Tensor ellipsoid_min_opacity = torch::tensor({0.0f}, CUDA_FLOAT32);
     Tensor rays_from_python = torch::tensor({false}, CUDA_BOOL);
     Tensor zero_grads = torch::tensor({true}, CUDA_BOOL);
     Tensor enable_sh = torch::tensor({true}, CUDA_BOOL);
@@ -50,6 +54,8 @@ struct ConfigDataHolder : torch::CustomClassHolder {
             .eps_scale_grad = reinterpret_cast<float *>(eps_scale_grad.data_ptr()),
             .background_channels = reinterpret_cast<floatK *>(background_channels.data_ptr()),
             .render_depth = reinterpret_cast<bool *>(render_depth.data_ptr()),
+            .render_ellipsoids = reinterpret_cast<bool *>(render_ellipsoids.data_ptr()),
+            .ellipsoid_min_opacity = reinterpret_cast<float *>(ellipsoid_min_opacity.data_ptr()),
             .rays_from_python = reinterpret_cast<bool *>(rays_from_python.data_ptr()),
             .zero_grads = reinterpret_cast<bool *>(zero_grads.data_ptr()),
             .enable_sh = reinterpret_cast<bool *>(enable_sh.data_ptr()),
@@ -69,6 +75,8 @@ struct ConfigDataHolder : torch::CustomClassHolder {
             .def_readonly("eps_scale_grad", &ConfigDataHolder::eps_scale_grad)
             .def_readonly("background_channels", &ConfigDataHolder::background_channels)
             .def_readonly("render_depth", &ConfigDataHolder::render_depth)
+            .def_readonly("render_ellipsoids", &ConfigDataHolder::render_ellipsoids)
+            .def_readonly("ellipsoid_min_opacity", &ConfigDataHolder::ellipsoid_min_opacity)
             .def_readonly("rays_from_python", &ConfigDataHolder::rays_from_python)
             .def_readonly("zero_grads", &ConfigDataHolder::zero_grads)
             .def_readonly("enable_sh", &ConfigDataHolder::enable_sh)

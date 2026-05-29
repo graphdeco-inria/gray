@@ -2,13 +2,60 @@
 # This file is licensed under the Apache 2.0 license in viewer/LICENSE.md.
 #
 
+import io
+import time
+import threading
+from collections import deque
+from typing import Optional
+
 import torch
 import numpy as np
+from PIL import Image as PILImage
 from . import Widget
 from OpenGL.GL import *
 from imgui_bundle import imgui
 from abc import abstractmethod
 from viewer.types import *
+
+
+def _to_uint8_numpy(img: np.ndarray) -> np.ndarray:
+    if img.dtype != np.uint8:
+        img = (np.clip(img, 0, 1) * 255).astype(np.uint8)
+    return np.ascontiguousarray(img)
+
+
+def _encode_remote_image(img: np.ndarray, codec: str, jpeg_quality: int):
+    img = _to_uint8_numpy(img)
+    if codec == "raw":
+        return memoryview(img.reshape(-1)), {"codec": "raw", "shape": tuple(img.shape)}
+
+    if codec == "jpeg":
+        if jpeg_quality >= 100:
+            return memoryview(img.reshape(-1)), {"codec": "raw", "shape": tuple(img.shape)}
+        buffer = io.BytesIO()
+        PILImage.fromarray(img, "RGB").save(
+            buffer,
+            format="JPEG",
+            quality=jpeg_quality,
+            optimize=False,
+            progressive=False,
+            subsampling=2,
+        )
+        return buffer.getvalue(), {"codec": "jpeg"}
+
+    raise ValueError(f"Unsupported remote image codec: {codec}")
+
+
+def _decode_remote_image(binary, text) -> np.ndarray:
+    codec = text.get("codec", "raw")
+    if codec == "raw":
+        return np.frombuffer(binary, dtype=np.uint8).reshape(text["shape"])
+
+    if codec == "jpeg":
+        with PILImage.open(io.BytesIO(binary)) as img:
+            return np.ascontiguousarray(img.convert("RGB"))
+
+    raise ValueError(f"Unsupported remote image codec: {codec}")
 
 def _cudaGetErrorEnum(error):
     if isinstance(error, driver.CUresult):
@@ -32,11 +79,81 @@ class Image(Widget):
     Base class for the image viewer widget. Each child class must override
     the '_upload' method to upload their image to the OpenGL texture.
     """
-    def __init__(self, mode: ViewerMode):
+    def __init__(self, mode: ViewerMode, remote_codec: str = "raw", jpeg_quality: int = 80):
         self.texture = Texture2D()
         self.img = None
         self.step_called = False
+        self.remote_codec = remote_codec
+        self.jpeg_quality = max(1, min(100, int(jpeg_quality)))
+        self._remote_frame_id = 0
+        # Guards remote frame/stat state shared between the receive and GUI threads.
+        self._remote_lock = threading.Lock()
+        self._pending_remote = None
+        self._pending_remote_frame_id = None
+        self._last_presented_remote_frame_id = None
+        self._received_frame_times = deque()
+        self._presented_frame_times = deque()
+        self._dropped_frame_times = deque()
+        self._remote_stats_window_seconds = 1.0
         super().__init__(mode)
+
+    def reset_remote_stats(self):
+        with self._remote_lock:
+            self._pending_remote = None
+            self._pending_remote_frame_id = None
+            self._last_presented_remote_frame_id = None
+            self._received_frame_times.clear()
+            self._presented_frame_times.clear()
+            self._dropped_frame_times.clear()
+
+    def _prune_remote_events(self, timestamps: deque[float], now: Optional[float] = None):
+        if now is None:
+            now = time.monotonic()
+        cutoff = now - self._remote_stats_window_seconds
+        while timestamps and timestamps[0] < cutoff:
+            timestamps.popleft()
+
+    def _record_remote_event(self, timestamps: deque[float], now: Optional[float] = None):
+        if now is None:
+            now = time.monotonic()
+        timestamps.append(now)
+        self._prune_remote_events(timestamps, now=now)
+
+    def _remote_event_fps(self, timestamps: deque[float]) -> float:
+        now = time.monotonic()
+        self._prune_remote_events(timestamps, now=now)
+        if not timestamps:
+            return 0.0
+        if len(timestamps) == 1:
+            return float(len(timestamps))
+        duration = max(now - timestamps[0], 1e-6)
+        return len(timestamps) / duration
+
+    def _mark_remote_frame_received(self, frame_id: int):
+        now = time.monotonic()
+        self._record_remote_event(self._received_frame_times, now=now)
+        if (
+            self._pending_remote_frame_id is not None
+            and self._pending_remote_frame_id != self._last_presented_remote_frame_id
+        ):
+            self._record_remote_event(self._dropped_frame_times, now=now)
+        self._pending_remote_frame_id = frame_id
+
+    def _mark_remote_frame_presented(self):
+        if self._pending_remote_frame_id is None:
+            return
+        if self._pending_remote_frame_id == self._last_presented_remote_frame_id:
+            return
+        self._record_remote_event(self._presented_frame_times)
+        self._last_presented_remote_frame_id = self._pending_remote_frame_id
+
+    def remote_stats(self) -> dict[str, float | int]:
+        with self._remote_lock:
+            return {
+                "received_fps": self._remote_event_fps(self._received_frame_times),
+                "presented_fps": self._remote_event_fps(self._presented_frame_times),
+                "dropped_fps": self._remote_event_fps(self._dropped_frame_times),
+            }
 
     def setup(self):
         """ Create OpenGL texture to be displayed. """
@@ -71,10 +188,21 @@ class Image(Widget):
         this method to define the upload procedure based upon the source.
         """
 
+    def _decode_remote_to_img(self, binary, text):
+        raise NotImplementedError
+
     def show_gui(self, draw_list: imgui.ImDrawList=None, res_x=0, res_y=0):
+        with self._remote_lock:
+            pending = self._pending_remote
+            self._pending_remote = None
+        if pending is not None:
+            self.img = self._decode_remote_to_img(*pending)
+
         if self.img is None:
             return
 
+        with self._remote_lock:
+            self._mark_remote_frame_presented()
         glBindTexture(GL_TEXTURE_2D, self.texture.id)
         self._upload()
 
@@ -105,14 +233,21 @@ class NumpyImage(Image):
     def server_send(self):
         if not self.step_called:
             return None, None
-        img = self.img
-        if img.dtype != np.uint8:
-            img = (np.clip(img, 0, 1) * 255).astype(np.uint8)
         self.step_called = False
-        return memoryview(np.ascontiguousarray(img.flatten())), {"shape": tuple(img.shape)}
+        binary, metadata = _encode_remote_image(self.img, self.remote_codec, self.jpeg_quality)
+        self._remote_frame_id += 1
+        metadata["frame_id"] = self._remote_frame_id
+        return binary, metadata
     
+    def _decode_remote_to_img(self, binary, text):
+        return _decode_remote_image(binary, text)
+
     def client_recv(self, binary, text):
-        self.img = np.frombuffer(binary, dtype=np.uint8).reshape(text["shape"])
+        with self._remote_lock:
+            if binary is not None:
+                self._pending_remote = (bytes(binary), text)
+            if "frame_id" in text:
+                self._mark_remote_frame_received(int(text["frame_id"]))
 
 
 # Check if 'cuda-python' and 'torch' are available
@@ -184,11 +319,23 @@ if enable_torch_image:
             if img.dtype != torch.uint8:
                 img = (torch.clip(img, 0, 1) * 255).byte()
             self.step_called = False
-            return memoryview(img.contiguous().flatten().cpu().numpy()), {"shape": tuple(img.shape)}
+            binary, metadata = _encode_remote_image(
+                img.contiguous().cpu().numpy(), self.remote_codec, self.jpeg_quality
+            )
+            self._remote_frame_id += 1
+            metadata["frame_id"] = self._remote_frame_id
+            return binary, metadata
+
+        def _decode_remote_to_img(self, binary, text):
+            img = _decode_remote_image(binary, text)
+            return torch.from_numpy(img).to(0)
 
         def client_recv(self, binary, text):
-            img = np.frombuffer(binary, dtype=np.uint8).reshape(text["shape"])
-            self.img = torch.from_numpy(img).to(0)
+            with self._remote_lock:
+                if binary is not None:
+                    self._pending_remote = (bytes(binary), text)
+                if "frame_id" in text:
+                    self._mark_remote_frame_received(int(text["frame_id"]))
 
 else:
     class TorchImage(NumpyImage):
@@ -199,3 +346,4 @@ else:
                 img = img.detach().cpu().numpy()
             # Otherwise it's already a numpy array
             self.img = img
+            self.step_called = True

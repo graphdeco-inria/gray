@@ -30,7 +30,6 @@ class FPSCamera(Camera):
         self.rot_speed = 1
         self.mouse_speed = 2
         self.radians_per_pixel = np.pi / 150
-        self.invert_mouse = False
         self.current_type = "FPS"
 
     def setup(self):
@@ -53,8 +52,6 @@ class FPSCamera(Camera):
     def process_mouse_input(self) -> bool:
         if imgui.is_mouse_dragging(0):
             delta = imgui.get_mouse_drag_delta()
-            delta.y *= -1 if self.invert_mouse else 1
-            delta.x *= -1 if self.invert_mouse else 1
             angle_right = (
                 -delta.y * self.radians_per_pixel * self.delta_time * self.mouse_speed
             )
@@ -62,6 +59,7 @@ class FPSCamera(Camera):
                 -delta.x * self.radians_per_pixel * self.delta_time * self.mouse_speed
             )
             self.apply_rotation(0, angle_right, angle_up)
+            self.mark_user_change()
             imgui.reset_mouse_drag_delta()
             return True
 
@@ -69,33 +67,50 @@ class FPSCamera(Camera):
 
     def process_keyboard_input(self) -> bool:
         if self.mode != ViewerMode.SERVER:
+            moved = False
             if imgui.is_key_down(self.movement_keys["w"]):
                 self.origin_motion += self.forward
+                moved = True
             if imgui.is_key_down(self.movement_keys["a"]):
                 self.origin_motion -= self.right
+                moved = True
             if imgui.is_key_down(self.movement_keys["q"]):
                 self.origin_motion -= self.up
+                moved = True
             if imgui.is_key_down(self.movement_keys["s"]):
                 self.origin_motion -= self.forward
+                moved = True
             if imgui.is_key_down(self.movement_keys["d"]):
                 self.origin_motion += self.right
+                moved = True
             if imgui.is_key_down(self.movement_keys["e"]):
                 self.origin_motion += self.up
+                moved = True
 
             if imgui.is_key_down(self.movement_keys["o"]):
                 self.rotation_motion[0] += 50 * self.radians_per_pixel
+                moved = True
             if imgui.is_key_down(self.movement_keys["u"]):
                 self.rotation_motion[0] -= 50 * self.radians_per_pixel
+                moved = True
             if imgui.is_key_down(self.movement_keys["i"]):
                 self.rotation_motion[1] += 50 * self.radians_per_pixel
+                moved = True
             if imgui.is_key_down(self.movement_keys["k"]):
                 self.rotation_motion[1] -= 50 * self.radians_per_pixel
+                moved = True
             if imgui.is_key_down(self.movement_keys["j"]):
                 self.rotation_motion[2] += 50 * self.radians_per_pixel
+                moved = True
             if imgui.is_key_down(self.movement_keys["l"]):
                 self.rotation_motion[2] -= 50 * self.radians_per_pixel
+                moved = True
+            if moved:
+                self.mark_user_change()
+            return moved
         else:
             logging.warning("Unexpected keyboard input for server camera")
+            return False
 
     def show_gui(self):
         # Sliders
@@ -105,7 +120,7 @@ class FPSCamera(Camera):
         _, self.rot_speed = imgui.slider_float(
             "Rotation Speed", self.rot_speed, 0.1, 10
         )
-        _, self.invert_mouse = imgui.checkbox("Invert Mouse", self.invert_mouse)
+        _, self.mouse_speed = imgui.slider_float("Mouse Speed", self.mouse_speed, 0.1, 10)
 
         # Smooth motion
         weight = 1 - np.exp(-self.delta_time / (self.smoothness + 1e-6))
@@ -126,6 +141,12 @@ class FPSCamera(Camera):
 
         self.origin_motion = np.zeros(3)
         self.rotation_motion = np.zeros(3)
+
+    def reset_motion(self):
+        self.origin_motion = np.zeros(3)
+        self.rotation_motion = np.zeros(3)
+        self.smoothed_origin_motion = np.zeros(3)
+        self.smoothed_rotation_motion = np.zeros(3)
 
     def import_client_modules(self):
         super().import_client_modules()

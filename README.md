@@ -168,6 +168,17 @@ Two types of MLPs are supported:
 
 If you wish to use [`tinycudann`](https://github.com/nvlabs/tiny-cuda-nn), you can optionally install it with `uv sync --extra tcnn` and enable it with `--tcnn`.
 
+### Remote Viewer
+The viewer can be used remotely, in which case a server renders the images and delivers them to the client via Websocket. Launch the server with
+```
+python view.py --server -m $MODEL_DIR
+```
+On the client, you can install the minimal required dependencies with `uv venv && source .venv/*/activate && uv pip install -r viewer/requirements.txt` and then run 
+```
+python view.py --client $SERVER_IP
+```
+The client does not require a GPU and all platforms are supported (Linux/Windows/Max). 
+
 ### Fast Viewer
 Besides the Python viewer, which is designed for ease of development, a faster C++ viewer is also provided. It can be included during the build with
 ```
@@ -205,7 +216,6 @@ Some files are derived from third-party sources and remain under their original 
 
 This includes, but is not limited to:
 - The [GraphDeco viewer](https://github.com/graphdeco-inria/graphdecoviewer) which is under Apache 2.0.
-- Selected files remaining under the Gaussian Splatting license.
 - The [dense initialization](https://github.com/CompVis/EDGS) script `third_party/edgs.py` under the copyright license of its original authors.
 
 
