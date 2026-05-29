@@ -1,4 +1,3 @@
-import gc
 import glfw
 import json
 import os
@@ -62,10 +61,6 @@ class Viewer(ABC):
             if isinstance(widget, Widget):
                 widget.setup()
                 self.widget_id_to_widget[widget.widget_id] = widget
-        # Move startup objects out of GC's reach so per-frame churn doesn't drag
-        # the whole static heap through periodic collections (kills jank bursts).
-        gc.collect()
-        gc.freeze()
 
     def _destroy(self):
         """ Go over all of the widgets and free any manually allocated objects """
@@ -190,9 +185,32 @@ class Viewer(ABC):
                     if wait > 0:
                         time.sleep(wait)
                 self._last_server_frame = time.monotonic()
+            _s0 = time.monotonic()
             self._drain_server_recv(websocket)
+            _s1 = time.monotonic()
             self.step()
+            _s2 = time.monotonic()
             self._server_send(websocket)
+            _s3 = time.monotonic()
+
+            # DIAGNOSTIC: server loop cadence. Once/sec print the WORST iteration
+            # and where its time went, to localize periodic ~100ms stalls.
+            a = getattr(self, "_dbg_tx", None)
+            if a is None:
+                a = self._dbg_tx = {"t0": _s0, "n": 0, "worst": 0.0, "phase": (0, 0, 0), "stalls": 0}
+            loop = _s3 - _s0
+            a["n"] += 1
+            if loop > 0.033:
+                a["stalls"] += 1
+            if loop > a["worst"]:
+                a["worst"] = loop
+                a["phase"] = (_s1 - _s0, _s2 - _s1, _s3 - _s2)
+            if _s3 - a["t0"] >= 1.0:
+                d, st, sn = a["phase"]
+                print(f"[tx] {a['n']}/s  worst loop {a['worst']*1e3:5.0f}ms "
+                      f"(drain={d*1e3:5.1f} step={st*1e3:5.1f} send={sn*1e3:5.1f})  "
+                      f"stalls(>33ms): {a['stalls']}", flush=True)
+                self._dbg_tx = {"t0": _s3, "n": 0, "worst": 0.0, "phase": (0, 0, 0), "stalls": 0}
             return
 
         if self.mode is LOCAL:
@@ -309,11 +327,31 @@ class Viewer(ABC):
         the widgets.
         """
         payload, binary_blob = self._recv_packet(websocket, timeout=timeout)
+
+        # DIAGNOSTIC: pure transport arrival cadence, measured on the receive
+        # thread independent of the GUI. Steady worst-gap ~= frame interval is
+        # healthy; periodic large gaps mean bursty websocket/network delivery.
+        now = time.monotonic()
+        a = getattr(self, "_dbg_rx", None)
+        if a is None:
+            a = self._dbg_rx = {"t0": now, "last": now, "n": 0, "max": 0.0, "stalls": 0}
+        gap = now - a["last"]; a["last"] = now
+        a["n"] += 1
+        a["max"] = max(a["max"], gap)
+        if gap > 0.033:
+            a["stalls"] += 1
+        if now - a["t0"] >= 1.0:
+            print(f"[rx] {a['n']}/s  worst gap {a['max']*1e3:5.0f}ms  stalls(>33ms): {a['stalls']}", flush=True)
+            self._dbg_rx = {"t0": now, "last": now, "n": 0, "max": 0.0, "stalls": 0}
+
         self._apply_packet(payload, binary_blob, viewer_recv="client_recv", widget_recv="client_recv")
 
     def run(self, ip: str = "localhost", port: int = 6009):
         self.create_widgets()
         self.running = True
+
+        if self.mode is CLIENT:
+            print("INFO: client build = decoupled-recv (no GUI-thread drain, no [slow] probe)")
 
         # Run the client connection in a different thread, the main thread runs the GUI.
         if self.mode is CLIENT:
