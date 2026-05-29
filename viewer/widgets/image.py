@@ -4,6 +4,7 @@
 
 import io
 import time
+import threading
 from collections import deque
 from typing import Optional
 
@@ -85,6 +86,9 @@ class Image(Widget):
         self.remote_codec = remote_codec
         self.jpeg_quality = max(1, min(100, int(jpeg_quality)))
         self._remote_frame_id = 0
+        # Guards all remote frame/stat state shared between the receive thread
+        # (client_recv) and the GUI thread (show_gui / remote_stats).
+        self._remote_lock = threading.Lock()
         self._pending_remote = None
         self._pending_remote_frame_id = None
         self._last_presented_remote_frame_id = None
@@ -95,12 +99,13 @@ class Image(Widget):
         super().__init__(mode)
 
     def reset_remote_stats(self):
-        self._pending_remote = None
-        self._pending_remote_frame_id = None
-        self._last_presented_remote_frame_id = None
-        self._received_frame_times.clear()
-        self._presented_frame_times.clear()
-        self._dropped_frame_times.clear()
+        with self._remote_lock:
+            self._pending_remote = None
+            self._pending_remote_frame_id = None
+            self._last_presented_remote_frame_id = None
+            self._received_frame_times.clear()
+            self._presented_frame_times.clear()
+            self._dropped_frame_times.clear()
 
     def _prune_remote_events(self, timestamps: deque[float], now: Optional[float] = None):
         if now is None:
@@ -144,11 +149,12 @@ class Image(Widget):
         self._last_presented_remote_frame_id = self._pending_remote_frame_id
 
     def remote_stats(self) -> dict[str, float | int]:
-        return {
-            "received_fps": self._remote_event_fps(self._received_frame_times),
-            "presented_fps": self._remote_event_fps(self._presented_frame_times),
-            "dropped_fps": self._remote_event_fps(self._dropped_frame_times),
-        }
+        with self._remote_lock:
+            return {
+                "received_fps": self._remote_event_fps(self._received_frame_times),
+                "presented_fps": self._remote_event_fps(self._presented_frame_times),
+                "dropped_fps": self._remote_event_fps(self._dropped_frame_times),
+            }
 
     def setup(self):
         """ Create OpenGL texture to be displayed. """
@@ -187,15 +193,17 @@ class Image(Widget):
         raise NotImplementedError
 
     def show_gui(self, draw_list: imgui.ImDrawList=None, res_x=0, res_y=0):
-        if self._pending_remote is not None:
-            binary, text = self._pending_remote
+        with self._remote_lock:
+            pending = self._pending_remote
             self._pending_remote = None
-            self.img = self._decode_remote_to_img(binary, text)
+        if pending is not None:
+            self.img = self._decode_remote_to_img(*pending)
 
         if self.img is None:
             return
 
-        self._mark_remote_frame_presented()
+        with self._remote_lock:
+            self._mark_remote_frame_presented()
         glBindTexture(GL_TEXTURE_2D, self.texture.id)
         self._upload()
 
@@ -236,10 +244,11 @@ class NumpyImage(Image):
         return _decode_remote_image(binary, text)
 
     def client_recv(self, binary, text):
-        if binary is not None:
-            self._pending_remote = (bytes(binary), text)
-        if "frame_id" in text:
-            self._mark_remote_frame_received(int(text["frame_id"]))
+        with self._remote_lock:
+            if binary is not None:
+                self._pending_remote = (bytes(binary), text)
+            if "frame_id" in text:
+                self._mark_remote_frame_received(int(text["frame_id"]))
 
 
 # Check if 'cuda-python' and 'torch' are available
@@ -323,10 +332,11 @@ if enable_torch_image:
             return torch.from_numpy(img).to(0)
 
         def client_recv(self, binary, text):
-            if binary is not None:
-                self._pending_remote = (bytes(binary), text)
-            if "frame_id" in text:
-                self._mark_remote_frame_received(int(text["frame_id"]))
+            with self._remote_lock:
+                if binary is not None:
+                    self._pending_remote = (bytes(binary), text)
+                if "frame_id" in text:
+                    self._mark_remote_frame_received(int(text["frame_id"]))
 
 else:
     class TorchImage(NumpyImage):
