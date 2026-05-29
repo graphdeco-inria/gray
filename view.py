@@ -32,6 +32,7 @@ class ViewerCLI:
     image_scale: Annotated[float, arg(aliases=["-x"])] = 1.0  # * Image scale factor; >1 = upsampling, <1 = downsampling
     remote_codec: Literal["jpeg", "raw"] = "jpeg"
     jpeg_quality: int = 80
+    server_fps: float = 60.0  # * Cap server render/send rate (0 = unlimited)
 
 class GaussianViewer(Viewer):
     def __init__(
@@ -522,4 +523,5 @@ if __name__ == "__main__":
             remote_codec=cli.remote_codec,
             jpeg_quality=cli.jpeg_quality,
         )
+        viewer.server_max_fps = cli.server_fps
         viewer.run(ip="0.0.0.0" if cli.server else "localhost", port=cli.port)
