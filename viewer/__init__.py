@@ -173,13 +173,6 @@ class Viewer(ABC):
             except TimeoutError:
                 break
 
-    def _drain_client_recv(self, websocket: ClientConnection):
-        while True:
-            try:
-                self._client_recv(websocket, timeout=self.remote_recv_timeout)
-            except TimeoutError:
-                break
-    
     def _main(self, websocket=None):
         """
         TODO: Update
@@ -197,38 +190,17 @@ class Viewer(ABC):
             self.show_gui()
             return
 
-        _t0 = time.monotonic()
-        _gap = _t0 - getattr(self, "_dbg_last_main", _t0)
-        self._dbg_last_main = _t0
-
-        if self.mode is CLIENT and self.websocket is not None:
-            try:
-                self._drain_client_recv(self.websocket)
-            except ConnectionClosed:
-                self._disconnect_client("INFO: Server disconnected")
-        _t1 = time.monotonic()
-
+        # Receiving runs on the connection thread (see _client_loop) so the GUI
+        # thread never blocks draining a backlog of frames off the socket.
         if self.mode & LOCAL_CLIENT:
             self.show_gui()
-        _t2 = time.monotonic()
 
         if self.mode is CLIENT and self.websocket is not None:
             try:
                 self._client_send(self.websocket)
             except ConnectionClosed:
                 self._disconnect_client("INFO: Server disconnected")
-        _t3 = time.monotonic()
 
-        if self.mode is CLIENT:
-            _frame_ms = (_t3 - _t0) * 1e3
-            _gap_ms = _gap * 1e3
-            if _gap_ms > 50.0 or _frame_ms > 50.0:
-                print(
-                    f"[slow] gap={_gap_ms:6.1f}ms frame={_frame_ms:6.1f}ms "
-                    f"(drain={(_t1-_t0)*1e3:5.1f} gui={(_t2-_t1)*1e3:5.1f} send={(_t3-_t2)*1e3:5.1f})",
-                    flush=True,
-                )
-    
     def _server_loop(self, websocket: ServerConnection):
         """ Internal method which runs the server loop. """
         # We only allow one client to connect at a time (for now).
@@ -273,9 +245,10 @@ class Viewer(ABC):
     
     def _client_loop(self, ip: str, port: int):
         """
-        Internal method which runs the client loop. This loop only deals with
-        connecting to the server and handling reconnections. The '_main' method
-        is run by the 'immapp.run' function.
+        Internal method which runs the client connection. It connects, handles
+        reconnections, and continuously receives frames off the GUI thread so
+        that draining a backlog never blocks rendering. The '_main' method (run
+        by 'immapp.run') only sends client state and presents the latest frame.
         """
         while True:
             # Try to connect to the server
@@ -300,7 +273,17 @@ class Viewer(ABC):
                     print(f"INFO: Failed to connect to server with error: {e}."
                         " Retrying in 2 seconds.")
                     self.websocket = None
-            time.sleep(2)
+                    time.sleep(2)
+                continue
+
+            # Connected: block on receiving frames; keep only the latest.
+            ws = self.websocket
+            try:
+                self._client_recv(ws)
+            except ConnectionClosed:
+                self._disconnect_client("INFO: Server disconnected")
+            except (OSError, ValueError, AttributeError) as e:
+                self._disconnect_client(f"INFO: Receive error: {e}")
 
     def _client_send(self, websocket: ClientConnection):
         """
