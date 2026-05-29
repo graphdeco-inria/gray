@@ -28,6 +28,7 @@ dependencies = [
     "tensorboard>=2.20.0",
     "pandas>=2.3.3",
     "pycolmap-cuda12>=4.0.4",
+    "omegaconf>=2.3.0",
 ]
 
 [project.optional-dependencies]
