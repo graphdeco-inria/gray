@@ -524,4 +524,9 @@ if __name__ == "__main__":
             jpeg_quality=cli.jpeg_quality,
         )
         viewer.server_max_fps = cli.server_fps
+        if cli.server:
+            # DIAGNOSTIC: definitive GC test. If the [rx]/[tx] ~525ms stalls vanish
+            # with collection fully off, the jank is GC; otherwise it is not.
+            import gc
+            gc.disable()
         viewer.run(ip="0.0.0.0" if cli.server else "localhost", port=cli.port)
