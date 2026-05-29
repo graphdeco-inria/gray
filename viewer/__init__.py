@@ -308,7 +308,6 @@ class Viewer(ABC):
             self._runner_params = hello_imgui.RunnerParams()
             self._runner_params.ini_filename = "viewer_layout.ini"
             self._runner_params.ini_filename_use_app_window_title = False
-            self._runner_params.fps_idling.enable_idling = False
             self._runner_params.app_window_params.window_geometry.window_size_state = hello_imgui.WindowSizeState.maximized
             self._runner_params.app_window_params.window_title = self.window_title
             self._runner_params.imgui_window_params.show_status_bar = True
