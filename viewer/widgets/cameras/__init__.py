@@ -27,6 +27,7 @@ class Camera(Widget):
 
         self.last_frame_time = 0
         self.delta_time = 0
+        self.user_change_serial = 0
 
         if to_world is not None:
             self.update_pose(to_world)
@@ -76,6 +77,9 @@ class Camera(Widget):
         """ Child class should override this to navigate. """
         pass
 
+    def mark_user_change(self):
+        self.user_change_serial += 1
+
     @property
     def to_world(self) -> np.ndarray:
         mat = np.identity(4, dtype=np.float32)
@@ -121,11 +125,8 @@ class Camera(Widget):
         updated, self.fov_y = imgui.slider_angle("FoV Y", self.fov_y, 5, 120)
         if updated:
             self.compute_fov_x()
-        
-        updated, [self.res_x, self.res_y] = imgui.slider_int2("Resolution", [self.res_x, self.res_y], 1, 4096)
-        if updated:
-            self.compute_fov_x()
-        
+            self.mark_user_change()
+
         curr_time = imgui.get_time()
         self.delta_time = curr_time - self.last_frame_time
         self.last_frame_time = curr_time
@@ -192,8 +193,8 @@ class Camera(Widget):
         self.right = self.right / np.linalg.norm(self.right)
 
     def set(self, cam_info: "CameraInfo"):
-        self.origin = cam_info.origin
-        mat = cam_info.R
+        self.origin = np.asarray(cam_info.origin, dtype=np.float32).copy()
+        mat = np.asarray(cam_info.R, dtype=np.float32).copy()
         self.forward = mat[:3, 2]
         self.forward = self.forward / np.linalg.norm(self.forward)
         self.up = -mat[:3, 1]

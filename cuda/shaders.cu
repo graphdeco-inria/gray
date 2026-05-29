@@ -5,6 +5,7 @@
 
 #include "forward_pass.cu"
 #include "backward_pass.cu"
+#include "ellipsoid_viewer.cu"
 
 extern "C" __global__ void __intersection__is() {
     // * Fetch config
@@ -86,7 +87,12 @@ extern "C" __global__ void __raygen__rg() {
             return; // * Inactive pixel
         }
 
-        // *** Forward pass
+        if (*params.config.render_ellipsoids) {
+            raygen_ellipsoids(pixel_id, ray_origin, ray_direction);
+            return;
+        }
+
+        // *** Normal forward pass
         Pixel pixel = forward_pass(pixel_id, ray_origin, ray_direction);
         params.framebuffer.write(pixel_id, pixel, params.config, params.metadata);
     }

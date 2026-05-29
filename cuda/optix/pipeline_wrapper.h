@@ -37,6 +37,7 @@ class PipelineWrapper {
         OPTIX_CHECK(optixProgramGroupDestroy(raygen_pg));
         OPTIX_CHECK(optixProgramGroupDestroy(miss_pg));
         OPTIX_CHECK(optixProgramGroupDestroy(hit_pg));
+        OPTIX_CHECK(optixProgramGroupDestroy(ellipsoid_hit_pg));
 
         OPTIX_CHECK(optixPipelineDestroy(pipeline));
         OPTIX_CHECK(optixModuleDestroy(module));
@@ -54,6 +55,7 @@ class PipelineWrapper {
     OptixProgramGroup raygen_pg;
     OptixProgramGroup miss_pg;
     OptixProgramGroup hit_pg;
+    OptixProgramGroup ellipsoid_hit_pg;
 
     static void context_log_cb(uint32_t level, const char *tag, const char *message, void *) {
         std::cerr << "[" << std::setw(2) << level << "][" << std::setw(12) << tag << "]: " << message << "\n";
@@ -167,6 +169,20 @@ class PipelineWrapper {
         hitgroup_prog_group_desc.hitgroup.entryFunctionNameIS = intersection_name.c_str();
         OPTIX_CHECK_LOG(optixProgramGroupCreate(context, &hitgroup_prog_group_desc, 1, &program_group_options, LOG,
                                                 &LOG_SIZE, &hit_pg));
+
+        // * Ellipsoid viewer hit group: dedicated IS + CH shaders (SBT index 1).
+        OptixProgramGroupDesc ellipsoid_hitgroup_desc = {};
+        ellipsoid_hitgroup_desc.kind = OPTIX_PROGRAM_GROUP_KIND_HITGROUP;
+        ellipsoid_hitgroup_desc.hitgroup.moduleCH = module;
+        std::string ellipsoid_ch_name = "__closesthit__ellipsoid";
+        ellipsoid_hitgroup_desc.hitgroup.entryFunctionNameCH = ellipsoid_ch_name.c_str();
+        ellipsoid_hitgroup_desc.hitgroup.moduleAH = nullptr;
+        ellipsoid_hitgroup_desc.hitgroup.entryFunctionNameAH = nullptr;
+        ellipsoid_hitgroup_desc.hitgroup.moduleIS = module;
+        std::string ellipsoid_is_name = "__intersection__is_ellipsoid";
+        ellipsoid_hitgroup_desc.hitgroup.entryFunctionNameIS = ellipsoid_is_name.c_str();
+        OPTIX_CHECK_LOG(optixProgramGroupCreate(context, &ellipsoid_hitgroup_desc, 1, &program_group_options, LOG,
+                                                &LOG_SIZE, &ellipsoid_hit_pg));
     }
 
     void createPipeline() {
@@ -174,7 +190,7 @@ class PipelineWrapper {
 
         OptixPipelineLinkOptions pipeline_link_options = {};
         pipeline_link_options.maxTraceDepth = max_trace_depth;
-        OptixProgramGroup program_groups[] = {raygen_pg, miss_pg, hit_pg};
+        OptixProgramGroup program_groups[] = {raygen_pg, miss_pg, hit_pg, ellipsoid_hit_pg};
         OptixProgramGroup *program_groups_array = reinterpret_cast<OptixProgramGroup *>(
             &program_groups); // * Safe since OptixProgramGroup typdefs a pointer type
         OPTIX_CHECK_LOG(
@@ -185,6 +201,7 @@ class PipelineWrapper {
         OPTIX_CHECK(optixUtilAccumulateStackSizes(raygen_pg, &stack_sizes, pipeline));
         OPTIX_CHECK(optixUtilAccumulateStackSizes(miss_pg, &stack_sizes, pipeline));
         OPTIX_CHECK(optixUtilAccumulateStackSizes(hit_pg, &stack_sizes, pipeline));
+        OPTIX_CHECK(optixUtilAccumulateStackSizes(ellipsoid_hit_pg, &stack_sizes, pipeline));
 
         uint32_t direct_callable_stack_size_from_traversal;
         uint32_t direct_callable_stack_size_from_state;
@@ -222,14 +239,16 @@ class PipelineWrapper {
         sbt.missRecordStrideInBytes = sizeof(miss_rec);
         sbt.missRecordCount = 1;
 
-        SbtRecord<Empty> hitgroup_rec = {};
-        OPTIX_CHECK(optixSbtRecordPackHeader(hit_pg, &hitgroup_rec));
+        // *Two hit group records: [0] = regular gaussian IS, [1] = ellipsoid IS+CH.
+        SbtRecord<Empty> hitgroup_recs[2] = {};
+        OPTIX_CHECK(optixSbtRecordPackHeader(hit_pg, &hitgroup_recs[0]));
+        OPTIX_CHECK(optixSbtRecordPackHeader(ellipsoid_hit_pg, &hitgroup_recs[1]));
         CUdeviceptr d_hitgroup_rec;
-        CUDA_CHECK(cudaMalloc(reinterpret_cast<void **>(&d_hitgroup_rec), sizeof(hitgroup_rec)));
-        CUDA_CHECK(cudaMemcpy(reinterpret_cast<void *>(d_hitgroup_rec), &hitgroup_rec, sizeof(hitgroup_rec),
+        CUDA_CHECK(cudaMalloc(reinterpret_cast<void **>(&d_hitgroup_rec), sizeof(hitgroup_recs)));
+        CUDA_CHECK(cudaMemcpy(reinterpret_cast<void *>(d_hitgroup_rec), &hitgroup_recs, sizeof(hitgroup_recs),
                               cudaMemcpyHostToDevice));
         sbt.hitgroupRecordBase = d_hitgroup_rec;
-        sbt.hitgroupRecordStrideInBytes = sizeof(hitgroup_rec);
-        sbt.hitgroupRecordCount = 1;
+        sbt.hitgroupRecordStrideInBytes = sizeof(hitgroup_recs[0]);
+        sbt.hitgroupRecordCount = 2;
     }
 };
