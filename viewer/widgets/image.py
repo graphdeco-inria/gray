@@ -29,6 +29,8 @@ def _encode_remote_image(img: np.ndarray, codec: str, jpeg_quality: int):
         return memoryview(img.reshape(-1)), {"codec": "raw", "shape": tuple(img.shape)}
 
     if codec == "jpeg":
+        if jpeg_quality >= 100:
+            return memoryview(img.reshape(-1)), {"codec": "raw", "shape": tuple(img.shape)}
         buffer = io.BytesIO()
         PILImage.fromarray(img, "RGB").save(
             buffer,
@@ -81,13 +83,13 @@ class Image(Widget):
         self.img = None
         self.step_called = False
         self.remote_codec = remote_codec
-        self.jpeg_quality = max(1, min(95, int(jpeg_quality)))
+        self.jpeg_quality = max(1, min(100, int(jpeg_quality)))
         self._remote_frame_id = 0
         self._pending_remote_frame_id = None
         self._last_presented_remote_frame_id = None
         self._received_frame_times = deque()
         self._presented_frame_times = deque()
-        self._dropped_remote_frames = 0
+        self._dropped_frame_times = deque()
         self._remote_stats_window_seconds = 1.0
         super().__init__(mode)
 
@@ -96,7 +98,7 @@ class Image(Widget):
         self._last_presented_remote_frame_id = None
         self._received_frame_times.clear()
         self._presented_frame_times.clear()
-        self._dropped_remote_frames = 0
+        self._dropped_frame_times.clear()
 
     def _prune_remote_events(self, timestamps: deque[float], now: Optional[float] = None):
         if now is None:
@@ -128,7 +130,7 @@ class Image(Widget):
             self._pending_remote_frame_id is not None
             and self._pending_remote_frame_id != self._last_presented_remote_frame_id
         ):
-            self._dropped_remote_frames += 1
+            self._record_remote_event(self._dropped_frame_times, now=now)
         self._pending_remote_frame_id = frame_id
 
     def _mark_remote_frame_presented(self):
@@ -143,7 +145,7 @@ class Image(Widget):
         return {
             "received_fps": self._remote_event_fps(self._received_frame_times),
             "presented_fps": self._remote_event_fps(self._presented_frame_times),
-            "dropped_frames": self._dropped_remote_frames,
+            "dropped_fps": self._remote_event_fps(self._dropped_frame_times),
         }
 
     def setup(self):
