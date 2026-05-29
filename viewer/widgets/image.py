@@ -85,6 +85,7 @@ class Image(Widget):
         self.remote_codec = remote_codec
         self.jpeg_quality = max(1, min(100, int(jpeg_quality)))
         self._remote_frame_id = 0
+        self._pending_remote = None
         self._pending_remote_frame_id = None
         self._last_presented_remote_frame_id = None
         self._received_frame_times = deque()
@@ -94,6 +95,7 @@ class Image(Widget):
         super().__init__(mode)
 
     def reset_remote_stats(self):
+        self._pending_remote = None
         self._pending_remote_frame_id = None
         self._last_presented_remote_frame_id = None
         self._received_frame_times.clear()
@@ -181,7 +183,15 @@ class Image(Widget):
         this method to define the upload procedure based upon the source.
         """
 
+    def _decode_remote_to_img(self, binary, text):
+        raise NotImplementedError
+
     def show_gui(self, draw_list: imgui.ImDrawList=None, res_x=0, res_y=0):
+        if self._pending_remote is not None:
+            binary, text = self._pending_remote
+            self._pending_remote = None
+            self.img = self._decode_remote_to_img(binary, text)
+
         if self.img is None:
             return
 
@@ -222,8 +232,12 @@ class NumpyImage(Image):
         metadata["frame_id"] = self._remote_frame_id
         return binary, metadata
     
+    def _decode_remote_to_img(self, binary, text):
+        return _decode_remote_image(binary, text)
+
     def client_recv(self, binary, text):
-        self.img = _decode_remote_image(binary, text)
+        if binary is not None:
+            self._pending_remote = (bytes(binary), text)
         if "frame_id" in text:
             self._mark_remote_frame_received(int(text["frame_id"]))
 
@@ -304,9 +318,13 @@ if enable_torch_image:
             metadata["frame_id"] = self._remote_frame_id
             return binary, metadata
 
-        def client_recv(self, binary, text):
+        def _decode_remote_to_img(self, binary, text):
             img = _decode_remote_image(binary, text)
-            self.img = torch.from_numpy(img).to(0)
+            return torch.from_numpy(img).to(0)
+
+        def client_recv(self, binary, text):
+            if binary is not None:
+                self._pending_remote = (bytes(binary), text)
             if "frame_id" in text:
                 self._mark_remote_frame_received(int(text["frame_id"]))
 
