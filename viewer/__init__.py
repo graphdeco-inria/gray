@@ -37,6 +37,9 @@ class Viewer(ABC):
         self.remote_max_queue = 1
         self._last_client_packet = None
 
+        self.server_max_fps = 60.0
+        self._last_server_frame = None
+
         # Mapping of widget_id to widget
         self.widget_id_to_widget = {}
 
@@ -180,6 +183,13 @@ class Viewer(ABC):
         backend computation and then creates the UI.
         """
         if self.mode is SERVER:
+            if self.server_max_fps:
+                min_interval = 1.0 / self.server_max_fps
+                if self._last_server_frame is not None:
+                    wait = min_interval - (time.monotonic() - self._last_server_frame)
+                    if wait > 0:
+                        time.sleep(wait)
+                self._last_server_frame = time.monotonic()
             self._drain_server_recv(websocket)
             self.step()
             self._server_send(websocket)
