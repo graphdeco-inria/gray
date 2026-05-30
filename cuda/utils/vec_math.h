@@ -67,15 +67,6 @@ __inline__ __device__ unsigned long long max(unsigned long long a, unsigned long
 
 __inline__ __device__ unsigned long long min(unsigned long long a, unsigned long long b) { return a < b ? a : b; }
 
-/** lerp */
-__inline__ __device__ float lerp(const float a, const float b, const float t) { return a + t * (b - a); }
-
-/** bilerp */
-__inline__ __device__ float bilerp(const float x00, const float x10, const float x01, const float x11, const float u,
-                                   const float v) {
-    return lerp(lerp(x00, x10, u), lerp(x01, x11, u), v);
-}
-
 template <typename IntegerType> __inline__ __device__ IntegerType roundUp(IntegerType x, IntegerType y) {
     return ((x + y - 1) / y) * y;
 }
@@ -171,15 +162,6 @@ __inline__ __device__ void operator/=(float2 &a, const float s) {
     a *= inv;
 }
 /** @} */
-
-/** lerp */
-__inline__ __device__ float2 lerp(const float2 &a, const float2 &b, const float t) { return a + t * (b - a); }
-
-/** bilerp */
-__inline__ __device__ float2 bilerp(const float2 &x00, const float2 &x10, const float2 &x01, const float2 &x11,
-                                    const float u, const float v) {
-    return lerp(lerp(x00, x10, u), lerp(x01, x11, u), v);
-}
 
 /** clamp
  * @{
@@ -341,15 +323,6 @@ __inline__ __device__ void operator/=(float3 &a, const float s) {
     a *= inv;
 }
 /** @} */
-
-/** lerp */
-__inline__ __device__ float3 lerp(const float3 &a, const float3 &b, const float t) { return a + t * (b - a); }
-
-/** bilerp */
-__inline__ __device__ float3 bilerp(const float3 &x00, const float3 &x10, const float3 &x01, const float3 &x11,
-                                    const float u, const float v) {
-    return lerp(lerp(x00, x10, u), lerp(x01, x11, u), v);
-}
 
 /** clamp
  * @{
@@ -524,15 +497,6 @@ __inline__ __device__ void operator/=(float4 &a, const float s) {
     a *= inv;
 }
 /** @} */
-
-/** lerp */
-__inline__ __device__ float4 lerp(const float4 &a, const float4 &b, const float t) { return a + t * (b - a); }
-
-/** bilerp */
-__inline__ __device__ float4 bilerp(const float4 &x00, const float4 &x10, const float4 &x01, const float4 &x11,
-                                    const float u, const float v) {
-    return lerp(lerp(x00, x10, u), lerp(x01, x11, u), v);
-}
 
 /** clamp
  * @{
@@ -888,20 +852,6 @@ template <size_t K> __inline__ __device__ generic_float<K> operator/(float s, co
 template <size_t K> __inline__ __device__ void operator/=(generic_float<K> &a, float s) {
     float inv = 1.0f / s;
     a *= inv;
-}
-
-// lerp
-
-template <size_t K>
-__inline__ __device__ generic_float<K> lerp(const generic_float<K> &a, const generic_float<K> &b, float t) {
-    return a + t * (b - a);
-}
-
-template <size_t K>
-__inline__ __device__ generic_float<K> bilerp(const generic_float<K> &x00, const generic_float<K> &x10,
-                                              const generic_float<K> &x01, const generic_float<K> &x11, float u,
-                                              float v) {
-    return lerp(lerp(x00, x10, u), lerp(x01, x11, u), v);
 }
 
 // clamp
