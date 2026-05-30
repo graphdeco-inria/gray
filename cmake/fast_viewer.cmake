@@ -2,8 +2,13 @@ if(NOT GRAY_BUILD_FAST_VIEWER)
     return()
 endif()
 
-find_package(OpenGL REQUIRED)
-find_package(X11 REQUIRED)
+if(WIN32)
+    find_package(OpenGL REQUIRED)
+    find_package(glfw3 CONFIG REQUIRED)
+else()
+    find_package(OpenGL REQUIRED)
+    find_package(X11 REQUIRED)
+endif()
 
 add_executable(fast_viewer
     cuda/fast_viewer/fast_viewer.cpp
@@ -19,9 +24,14 @@ target_include_directories(fast_viewer PRIVATE
     ${OptiX8_INCLUDE_DIRS}
     ${CMAKE_CUDA_TOOLKIT_INCLUDE_DIRECTORIES}
     ${OPENGL_INCLUDE_DIRS}
-    ${X11_INCLUDE_DIR}
     ${CMAKE_SOURCE_DIR}/cuda
 )
+
+if(NOT WIN32)
+    target_include_directories(fast_viewer PRIVATE
+        ${X11_INCLUDE_DIR}
+    )
+endif()
 
 target_compile_definitions(fast_viewer PRIVATE
     CHANNELS=${CHANNELS}
@@ -54,9 +64,19 @@ target_link_libraries(fast_viewer PRIVATE
     CUDA::cublas
     ${OptiX_LIBRARIES}
     OpenGL::GL
-    ${X11_LIBRARIES}
-    dl
 )
+
+if(WIN32)
+    target_link_libraries(fast_viewer PRIVATE
+        glfw
+        opengl32
+    )
+else()
+    target_link_libraries(fast_viewer PRIVATE
+        ${X11_LIBRARIES}
+        dl
+    )
+endif()
 
 add_dependencies(fast_viewer copy_optix_ptx)
 
