@@ -152,10 +152,16 @@ Note that the backward pass relies on the data from the forward pass staying unm
 ### Quality Presets
 Preset configurations are available: adding the flag `-c configs/lq.json` selects a lower level of quality, and the flag `-c configs/hq.json` selects a high level of quality. The default quality level is `mq` (medium quality). The hyperparameters used are detailed in the paper.
 
-### Compatibility with 3DGS
-The gaussians produced by this method are incompatible with 3DGS; in theory, the differences could be resolved by modifying both methods (refer to the paper for a short discussion on page 14), but this has not been done in practice. Implementation-wise, the file format was changed to `.safetensors` which is simpler and faster.
+### Compatibility with 3DGS and 3DGRT
+The gaussians produced by this method are incompatible with 3DGS; in theory, the differences (different kernel, different sorting, and perspective accuracy) could be resolved by modifying both methods (refer to the paper for a short discussion on page 14), but this has not been done in practice. Rendering differences with 3DGRT are minute (hybrid transaprency).
 
-Scenes can be converted **to and from** the INRIA [3DGS](https://github.com/graphdeco-inria/gaussian-splatting) and NVIDIA [3DGRT](https://github.com/nv-tlabs/3dgrut) formats with the scripts in [`convert/`](convert/) (`to_3dgs.py`/`from_3dgs.py` and `to_3dgrt.py`/`from_3dgrt.py`). The parameter conversion is lossless (a GRay → 3DGS → GRay round-trip reproduces identical metrics) but 3DGS-based viewers will produce blurrier images with some differences. 3DGRT renders should look identical.
+Implementation-wise, the file format was changed to `.safetensors` which is simpler and faster. Scenes can be converted **to and from** the INRIA [3DGS](https://github.com/graphdeco-inria/gaussian-splatting) and NVIDIA [3DGRT](https://github.com/nv-tlabs/3dgrut) formats with the scripts in [`convert/`](convert/) (`to_3dgs.py`/`from_3dgs.py` and `to_3dgrt.py`/`from_3dgrt.py`). The parameter conversion is lossless (a GRay → 3DGS → GRay round-trip reproduces identical metrics) but 3DGS-based viewers will produce blurrier images with some differences. 3DGRT renders should look identical. GRay scenes converted into these formats also render faster than each method's own models:
+
+| Renderer | FPS (their scenes) | FPS (our scenes) | Speedup |
+| :--- | ---: | ---: | ---: |
+| 3DGS  | 253 | 432 | 1.7× |
+| 3DGRT |  68 | 190 | 2.8× |
+
 
 ### Evaluation
 Metric computation was moved to the [PIQ](https://github.com/photosynthesis-team/piq) library since the LPIPS metric was incorrect in the original 3DGS codebase. PSNRs and SSIM scores were verified to match.
