@@ -10,6 +10,7 @@ from torchvision.io import read_image, ImageReadMode
 from concurrent.futures import ThreadPoolExecutor
 import torch
 import struct
+import json
 
 executor = ThreadPoolExecutor()
 
@@ -138,6 +139,44 @@ class SceneInfo:
             train_images=train_images,
             test_images=test_images,
             pc_path=pc_path,
+            is_nerf_synthetic=False,
+        )
+
+    @staticmethod
+    def from_cameras_json(model_path: str, parse_images=True) -> SceneInfo:
+        model_dir = os.path.dirname(model_path) if os.path.isfile(model_path) else model_path
+        cameras_path = os.path.join(model_dir, "cameras.json")
+        if not os.path.exists(cameras_path):
+            raise FileNotFoundError(
+                f"No colmap dataset and no cameras.json found at '{cameras_path}'"
+            )
+
+        with open(cameras_path, "r") as file:
+            payload = json.load(file)
+        cam_infos = sorted(
+            (CameraInfo.from_json(entry) for entry in payload),
+            key=lambda x: x.image_name,
+        )
+        train_cam_infos = [c for c in cam_infos if not c.is_test]
+        test_cam_infos = [c for c in cam_infos if c.is_test]
+
+        def load_images(cams):
+            images = {}
+            if parse_images:
+                for cam in cams:
+                    if cam.image_path and os.path.exists(cam.image_path):
+                        images[cam.image_name] = (
+                            read_image(cam.image_path, ImageReadMode.RGB).cuda() / 255
+                        )
+            return images
+
+        return SceneInfo(
+            point_cloud=None,
+            train_cameras=train_cam_infos,
+            test_cameras=test_cam_infos,
+            train_images=load_images(train_cam_infos),
+            test_images=load_images(test_cam_infos),
+            pc_path=None,
             is_nerf_synthetic=False,
         )
 
