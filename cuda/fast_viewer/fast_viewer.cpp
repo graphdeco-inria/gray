@@ -2,10 +2,17 @@
 
 #include <GL/gl.h>
 #include <GL/glext.h>
+
+#ifdef _WIN32
+#define GLFW_INCLUDE_NONE
+#include <GLFW/glfw3.h>
+#else
 #include <GL/glx.h>
 #include <X11/Xatom.h>
 #include <X11/Xlib.h>
 #include <X11/keysym.h>
+#endif
+
 #include <cuda_gl_interop.h>
 
 #include <algorithm>
@@ -29,7 +36,7 @@
 #define GL_RGBA32F 0x8814
 #endif
 
-cudaError_t upload_rgb_to_rgba_array(cudaArray_t dst, const float *rgb, int width, int height, cudaStream_t stream);
+cudaError_t upload_rgb_to_rgba_array(cudaArray_t dst, const float* rgb, int width, int height, cudaStream_t stream);
 
 namespace fs = std::filesystem;
 using Clock = std::chrono::steady_clock;
@@ -51,19 +58,19 @@ struct ViewerConfig {
     float exp_power = 2.0f;
     float alpha_threshold = 0.01f;
     float t_threshold = 0.03f;
-    std::array<float, 3> bg_color = {0.0f, 0.0f, 0.0f};
+    std::array<float, 3> bg_color = { 0.0f, 0.0f, 0.0f };
 };
 
 struct CameraState {
     int width = 1280;
     int height = 720;
     float fov_y = 0.7f;
-    std::array<float, 3> origin = {0.0f, 0.0f, 0.0f};
-    std::array<float, 3> right = {1.0f, 0.0f, 0.0f};
-    std::array<float, 3> up = {0.0f, -1.0f, 0.0f};
-    std::array<float, 3> forward = {0.0f, 0.0f, 1.0f};
-    std::array<float, 3> smoothed_origin_motion = {0.0f, 0.0f, 0.0f};
-    std::array<float, 3> smoothed_rotation_motion = {0.0f, 0.0f, 0.0f};
+    std::array<float, 3> origin = { 0.0f, 0.0f, 0.0f };
+    std::array<float, 3> right = { 1.0f, 0.0f, 0.0f };
+    std::array<float, 3> up = { 0.0f, -1.0f, 0.0f };
+    std::array<float, 3> forward = { 0.0f, 0.0f, 1.0f };
+    std::array<float, 3> smoothed_origin_motion = { 0.0f, 0.0f, 0.0f };
+    std::array<float, 3> smoothed_rotation_motion = { 0.0f, 0.0f, 0.0f };
 };
 
 struct TensorInfo {
@@ -79,7 +86,34 @@ struct LoadedCameras {
     std::vector<CameraState> test;
 };
 
-static std::string read_text(const fs::path &path) {
+#ifdef _WIN32
+struct PlatformWindow {
+    GLFWwindow* window = nullptr;
+    int width = 1;
+    int height = 1;
+    bool left_mouse_down = false;
+    int last_mouse_x = 0;
+    int last_mouse_y = 0;
+    int mouse_delta_x = 0;
+    int mouse_delta_y = 0;
+};
+#else
+struct PlatformWindow {
+    Display* display = nullptr;
+    Window window = 0;
+    GLXContext gl_context = nullptr;
+    Atom wm_delete = 0;
+    int width = 1;
+    int height = 1;
+    bool left_mouse_down = false;
+    int last_mouse_x = 0;
+    int last_mouse_y = 0;
+    int mouse_delta_x = 0;
+    int mouse_delta_y = 0;
+};
+#endif
+
+static std::string read_text(const fs::path& path) {
     std::ifstream file(path);
     if (!file) {
         throw std::runtime_error("failed to open " + path.string());
@@ -87,19 +121,19 @@ static std::string read_text(const fs::path &path) {
     return std::string(std::istreambuf_iterator<char>(file), {});
 }
 
-static double json_number(const std::string &json, const std::string &key, double fallback) {
+static double json_number(const std::string& json, const std::string& key, double fallback) {
     std::regex re("\"" + key + "\"\\s*:\\s*(-?[0-9]+(?:\\.[0-9]+)?(?:[eE][-+]?[0-9]+)?)");
     std::smatch m;
     return std::regex_search(json, m, re) ? std::stod(m[1].str()) : fallback;
 }
 
-static bool json_bool(const std::string &json, const std::string &key, bool fallback) {
+static bool json_bool(const std::string& json, const std::string& key, bool fallback) {
     std::regex re("\"" + key + "\"\\s*:\\s*(true|false)");
     std::smatch m;
     return std::regex_search(json, m, re) ? (m[1].str() == "true") : fallback;
 }
 
-static std::vector<double> json_array_numbers(const std::string &json, const std::string &key) {
+static std::vector<double> json_array_numbers(const std::string& json, const std::string& key) {
     size_t key_pos = json.find("\"" + key + "\"");
     if (key_pos == std::string::npos) {
         return {};
@@ -113,7 +147,8 @@ static std::vector<double> json_array_numbers(const std::string &json, const std
     for (; end < json.size(); ++end) {
         if (json[end] == '[') {
             ++depth;
-        } else if (json[end] == ']') {
+        }
+        else if (json[end] == ']') {
             --depth;
             if (depth == 0) {
                 ++end;
@@ -130,7 +165,7 @@ static std::vector<double> json_array_numbers(const std::string &json, const std
     return values;
 }
 
-static std::vector<std::string> json_top_level_objects(const std::string &json) {
+static std::vector<std::string> json_top_level_objects(const std::string& json) {
     std::vector<std::string> objects;
     int bracket_depth = 0;
     int brace_depth = 0;
@@ -142,9 +177,11 @@ static std::vector<std::string> json_top_level_objects(const std::string &json) 
         if (in_string) {
             if (escape) {
                 escape = false;
-            } else if (c == '\\') {
+            }
+            else if (c == '\\') {
                 escape = true;
-            } else if (c == '"') {
+            }
+            else if (c == '"') {
                 in_string = false;
             }
             continue;
@@ -155,14 +192,17 @@ static std::vector<std::string> json_top_level_objects(const std::string &json) 
         }
         if (c == '[') {
             ++bracket_depth;
-        } else if (c == ']') {
+        }
+        else if (c == ']') {
             --bracket_depth;
-        } else if (c == '{') {
+        }
+        else if (c == '{') {
             if (bracket_depth == 1 && brace_depth == 0) {
                 object_begin = i;
             }
             ++brace_depth;
-        } else if (c == '}') {
+        }
+        else if (c == '}') {
             --brace_depth;
             if (bracket_depth == 1 && brace_depth == 0 && object_begin != std::string::npos) {
                 objects.push_back(json.substr(object_begin, i - object_begin + 1));
@@ -173,7 +213,7 @@ static std::vector<std::string> json_top_level_objects(const std::string &json) 
     return objects;
 }
 
-static ViewerConfig load_config(const fs::path &model_path) {
+static ViewerConfig load_config(const fs::path& model_path) {
     ViewerConfig cfg;
     std::string json = read_text(model_path / "config.json");
     cfg.ppll_forward_size = static_cast<int64_t>(json_number(json, "ppll_forward_size", cfg.ppll_forward_size));
@@ -184,22 +224,22 @@ static ViewerConfig load_config(const fs::path &model_path) {
     cfg.t_threshold = static_cast<float>(json_number(json, "t_threshold", cfg.t_threshold));
     std::vector<double> bg = json_array_numbers(json, "bg_color");
     if (bg.size() >= 3) {
-        cfg.bg_color = {static_cast<float>(bg[0]), static_cast<float>(bg[1]), static_cast<float>(bg[2])};
+        cfg.bg_color = { static_cast<float>(bg[0]), static_cast<float>(bg[1]), static_cast<float>(bg[2]) };
     }
     return cfg;
 }
 
-static CameraState parse_camera_object(const std::string &json) {
+static CameraState parse_camera_object(const std::string& json) {
     CameraState cam;
     std::vector<double> r = json_array_numbers(json, "R");
     std::vector<double> o = json_array_numbers(json, "origin");
     if (r.size() >= 9) {
-        cam.right = {static_cast<float>(r[0]), static_cast<float>(r[3]), static_cast<float>(r[6])};
-        cam.up = {-static_cast<float>(r[1]), -static_cast<float>(r[4]), -static_cast<float>(r[7])};
-        cam.forward = {static_cast<float>(r[2]), static_cast<float>(r[5]), static_cast<float>(r[8])};
+        cam.right = { static_cast<float>(r[0]), static_cast<float>(r[3]), static_cast<float>(r[6]) };
+        cam.up = { -static_cast<float>(r[1]), -static_cast<float>(r[4]), -static_cast<float>(r[7]) };
+        cam.forward = { static_cast<float>(r[2]), static_cast<float>(r[5]), static_cast<float>(r[8]) };
     }
     if (o.size() >= 3) {
-        cam.origin = {static_cast<float>(o[0]), static_cast<float>(o[1]), static_cast<float>(o[2])};
+        cam.origin = { static_cast<float>(o[0]), static_cast<float>(o[1]), static_cast<float>(o[2]) };
     }
     cam.fov_y = static_cast<float>(json_number(json, "fov_y", cam.fov_y));
     cam.width = static_cast<int>(json_number(json, "image_width", cam.width));
@@ -207,15 +247,16 @@ static CameraState parse_camera_object(const std::string &json) {
     return cam;
 }
 
-static LoadedCameras load_cameras(const fs::path &model_path) {
+static LoadedCameras load_cameras(const fs::path& model_path) {
     LoadedCameras result;
     std::string json = read_text(model_path / "cameras.json");
-    for (const std::string &object : json_top_level_objects(json)) {
+    for (const std::string& object : json_top_level_objects(json)) {
         CameraState cam = parse_camera_object(object);
         result.all.push_back(cam);
         if (json_bool(object, "is_test", false)) {
             result.test.push_back(cam);
-        } else {
+        }
+        else {
             result.train.push_back(cam);
         }
     }
@@ -225,7 +266,7 @@ static LoadedCameras load_cameras(const fs::path &model_path) {
     return result;
 }
 
-static TensorInfo parse_tensor_info(const std::string &header, const std::string &key) {
+static TensorInfo parse_tensor_info(const std::string& header, const std::string& key) {
     size_t key_pos = header.find("\"" + key + "\"");
     if (key_pos == std::string::npos) {
         throw std::runtime_error("safetensors missing key: " + key);
@@ -236,7 +277,8 @@ static TensorInfo parse_tensor_info(const std::string &header, const std::string
     for (; end < header.size(); ++end) {
         if (header[end] == '{') {
             ++depth;
-        } else if (header[end] == '}') {
+        }
+        else if (header[end] == '}') {
             --depth;
             if (depth == 0) {
                 ++end;
@@ -269,7 +311,7 @@ static TensorInfo parse_tensor_info(const std::string &header, const std::string
     return info;
 }
 
-static torch::Dtype tensor_dtype(const std::string &dtype) {
+static torch::Dtype tensor_dtype(const std::string& dtype) {
     if (dtype == "F32") {
         return torch::kFloat32;
     }
@@ -282,8 +324,8 @@ static torch::Dtype tensor_dtype(const std::string &dtype) {
     throw std::runtime_error("unsupported safetensors dtype: " + dtype);
 }
 
-static torch::Tensor load_tensor(std::ifstream &file, uint64_t data_start, const std::string &header,
-                                 const std::string &key) {
+static torch::Tensor load_tensor(std::ifstream& file, uint64_t data_start, const std::string& header,
+    const std::string& key) {
     TensorInfo info = parse_tensor_info(header, key);
     torch::Tensor cpu = torch::empty(info.shape, torch::TensorOptions().dtype(tensor_dtype(info.dtype)).device(torch::kCPU));
     uint64_t bytes = info.end - info.begin;
@@ -291,23 +333,23 @@ static torch::Tensor load_tensor(std::ifstream &file, uint64_t data_start, const
         throw std::runtime_error("safetensors byte count mismatch for " + key);
     }
     file.seekg(static_cast<std::streamoff>(data_start + info.begin));
-    file.read(reinterpret_cast<char *>(cpu.data_ptr()), static_cast<std::streamsize>(bytes));
+    file.read(reinterpret_cast<char*>(cpu.data_ptr()), static_cast<std::streamsize>(bytes));
     if (!file) {
         throw std::runtime_error("failed reading tensor " + key);
     }
     return cpu.to(torch::kCUDA, true);
 }
 
-static std::string read_safetensors_header(std::ifstream &file, uint64_t &data_start) {
+static std::string read_safetensors_header(std::ifstream& file, uint64_t& data_start) {
     uint64_t header_len = 0;
-    file.read(reinterpret_cast<char *>(&header_len), sizeof(header_len));
+    file.read(reinterpret_cast<char*>(&header_len), sizeof(header_len));
     std::string header(header_len, '\0');
     file.read(header.data(), static_cast<std::streamsize>(header_len));
     data_start = sizeof(header_len) + header_len;
     return header;
 }
 
-static fs::path find_checkpoint(const fs::path &model_path, int iteration) {
+static fs::path find_checkpoint(const fs::path& model_path, int iteration) {
     if (model_path.extension() == ".safetensors") {
         return model_path;
     }
@@ -318,7 +360,7 @@ static fs::path find_checkpoint(const fs::path &model_path, int iteration) {
     }
     int best = -1;
     fs::path best_path;
-    for (const auto &entry : fs::directory_iterator(model_path)) {
+    for (const auto& entry : fs::directory_iterator(model_path)) {
         std::string name = entry.path().filename().string();
         std::smatch m;
         if (std::regex_match(name, m, std::regex("gaussians_([0-9]+)\\.safetensors"))) {
@@ -335,28 +377,35 @@ static fs::path find_checkpoint(const fs::path &model_path, int iteration) {
     return best_path;
 }
 
-static void load_gaussians(Raytracer &rt, const fs::path &checkpoint, bool sh_enabled) {
+static void load_gaussians(Raytracer& rt, const fs::path& checkpoint, bool sh_enabled) {
     std::ifstream file(checkpoint, std::ios::binary);
     if (!file) {
         throw std::runtime_error("failed to open " + checkpoint.string());
     }
+
     uint64_t data_start = 0;
     std::string header = read_safetensors_header(file, data_start);
+
     torch::NoGradGuard no_grad;
     auto g = rt.gaussian_data;
+
     g->mean.copy_(load_tensor(file, data_start, header, "mean"));
     g->rotation.copy_(load_tensor(file, data_start, header, "rotation"));
     g->scale.copy_(load_tensor(file, data_start, header, "scale"));
     g->opacity.copy_(load_tensor(file, data_start, header, "opacity"));
-    g->channels.copy_(load_tensor(file, data_start, header, "channels"));
-    g->sh_coeffs_dc.copy_(load_tensor(file, data_start, header, "sh_coeffs_dc"));
+
     if (sh_enabled) {
+        g->sh_coeffs_dc.copy_(load_tensor(file, data_start, header, "sh_coeffs_dc"));
         g->sh_coeffs_rest.copy_(load_tensor(file, data_start, header, "sh_coeffs_rest"));
     }
+    else {
+        g->channels.copy_(load_tensor(file, data_start, header, "channels"));
+    }
+
     g->current_sh_degree.copy_(load_tensor(file, data_start, header, "current_sh_degree"));
 }
 
-static void configure_raytracer(Raytracer &rt, const ViewerConfig &cfg) {
+static void configure_raytracer(Raytracer& rt, const ViewerConfig& cfg) {
     torch::NoGradGuard no_grad;
     auto c = rt.config_data;
     c->alpha_threshold.fill_(cfg.alpha_threshold);
@@ -364,8 +413,8 @@ static void configure_raytracer(Raytracer &rt, const ViewerConfig &cfg) {
     c->exp_power.fill_(cfg.exp_power);
     c->render_depth.fill_(false);
     c->rays_from_python.fill_(false);
-    c->background_channels.copy_(torch::tensor({cfg.bg_color[0], cfg.bg_color[1], cfg.bg_color[2]},
-                                               torch::TensorOptions().dtype(torch::kFloat32).device(torch::kCUDA)));
+    c->background_channels.copy_(torch::tensor({ cfg.bg_color[0], cfg.bg_color[1], cfg.bg_color[2] },
+        torch::TensorOptions().dtype(torch::kFloat32).device(torch::kCUDA)));
     c->enable_sh.fill_(cfg.sh);
     c->update_channels.fill_(!cfg.sh);
     rt.meta_data->grads_enabled.fill_(false);
@@ -373,7 +422,7 @@ static void configure_raytracer(Raytracer &rt, const ViewerConfig &cfg) {
     rt.meta_data->run_backward_pass.fill_(false);
 }
 
-static void upload_camera(Raytracer &rt, const CameraState &cam) {
+static void upload_camera(Raytracer& rt, const CameraState& cam) {
     torch::NoGradGuard no_grad;
     rt.camera_data->znear.fill_(0.0f);
     rt.camera_data->zfar.fill_(99999.9f);
@@ -383,18 +432,18 @@ static void upload_camera(Raytracer &rt, const CameraState &cam) {
         cam.right[1], cam.up[1], -cam.forward[1],
         cam.right[2], cam.up[2], -cam.forward[2],
     };
-    torch::Tensor origin = torch::from_blob(const_cast<float *>(cam.origin.data()), {3},
-                                            torch::TensorOptions().dtype(torch::kFloat32)).clone().to(torch::kCUDA);
-    torch::Tensor rot = torch::from_blob(c2w.data(), {3, 3},
-                                         torch::TensorOptions().dtype(torch::kFloat32)).clone().to(torch::kCUDA);
+    torch::Tensor origin = torch::from_blob(const_cast<float*>(cam.origin.data()), { 3 },
+        torch::TensorOptions().dtype(torch::kFloat32)).clone().to(torch::kCUDA);
+    torch::Tensor rot = torch::from_blob(c2w.data(), { 3, 3 },
+        torch::TensorOptions().dtype(torch::kFloat32)).clone().to(torch::kCUDA);
     rt.camera_data->set_pose(origin, rot);
 }
 
-static float dot3(const std::array<float, 3> &a, const std::array<float, 3> &b) {
+static float dot3(const std::array<float, 3>& a, const std::array<float, 3>& b) {
     return a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
 }
 
-static std::array<float, 3> cross3(const std::array<float, 3> &a, const std::array<float, 3> &b) {
+static std::array<float, 3> cross3(const std::array<float, 3>& a, const std::array<float, 3>& b) {
     return {
         a[1] * b[2] - a[2] * b[1],
         a[2] * b[0] - a[0] * b[2],
@@ -402,24 +451,24 @@ static std::array<float, 3> cross3(const std::array<float, 3> &a, const std::arr
     };
 }
 
-static float length3(const std::array<float, 3> &v) {
+static float length3(const std::array<float, 3>& v) {
     return std::sqrt(std::max(dot3(v, v), 1e-20f));
 }
 
-static void normalize3(std::array<float, 3> &v) {
+static void normalize3(std::array<float, 3>& v) {
     float inv_len = 1.0f / length3(v);
     v[0] *= inv_len;
     v[1] *= inv_len;
     v[2] *= inv_len;
 }
 
-static void add_scaled(std::array<float, 3> &v, const std::array<float, 3> &d, float s) {
+static void add_scaled(std::array<float, 3>& v, const std::array<float, 3>& d, float s) {
     v[0] += d[0] * s;
     v[1] += d[1] * s;
     v[2] += d[2] * s;
 }
 
-static std::array<float, 3> rotate_vec(const std::array<float, 3> &vec, std::array<float, 3> axis, float angle) {
+static std::array<float, 3> rotate_vec(const std::array<float, 3>& vec, std::array<float, 3> axis, float angle) {
     normalize3(axis);
     float c = std::cos(angle);
     float s = std::sin(angle);
@@ -432,7 +481,7 @@ static std::array<float, 3> rotate_vec(const std::array<float, 3> &vec, std::arr
     };
 }
 
-static bool apply_rotation(CameraState &cam, float angle_forward, float angle_right, float angle_up) {
+static bool apply_rotation(CameraState& cam, float angle_forward, float angle_right, float angle_up) {
     bool changed = false;
     if (std::abs(angle_forward) > 1e-7f) {
         cam.up = rotate_vec(cam.up, cam.forward, angle_forward);
@@ -461,22 +510,28 @@ static bool apply_rotation(CameraState &cam, float angle_forward, float angle_ri
     return true;
 }
 
-static bool almost_nonzero(const std::array<float, 3> &v) {
+static bool almost_nonzero(const std::array<float, 3>& v) {
     return dot3(v, v) > 1e-14f;
 }
 
+#ifndef _WIN32
 static bool key_down(const char keys[32], KeyCode code) {
     return (keys[code / 8] & (1 << (code % 8))) != 0;
 }
+#else
+static bool key_down(GLFWwindow* window, int key) {
+    return glfwGetKey(window, key) == GLFW_PRESS;
+}
+#endif
 
-static void put_u32_be(std::vector<uint8_t> &out, uint32_t value) {
+static void put_u32_be(std::vector<uint8_t>& out, uint32_t value) {
     out.push_back(static_cast<uint8_t>((value >> 24) & 0xff));
     out.push_back(static_cast<uint8_t>((value >> 16) & 0xff));
     out.push_back(static_cast<uint8_t>((value >> 8) & 0xff));
     out.push_back(static_cast<uint8_t>(value & 0xff));
 }
 
-static uint32_t crc32_bytes(const uint8_t *data, size_t size) {
+static uint32_t crc32_bytes(const uint8_t* data, size_t size) {
     static uint32_t table[256] = {};
     static bool ready = false;
     if (!ready) {
@@ -496,7 +551,7 @@ static uint32_t crc32_bytes(const uint8_t *data, size_t size) {
     return c ^ 0xffffffffu;
 }
 
-static uint32_t adler32_bytes(const uint8_t *data, size_t size) {
+static uint32_t adler32_bytes(const uint8_t* data, size_t size) {
     uint32_t a = 1;
     uint32_t b = 0;
     for (size_t i = 0; i < size; ++i) {
@@ -506,7 +561,7 @@ static uint32_t adler32_bytes(const uint8_t *data, size_t size) {
     return (b << 16) | a;
 }
 
-static void append_png_chunk(std::vector<uint8_t> &png, const char type[4], const std::vector<uint8_t> &data) {
+static void append_png_chunk(std::vector<uint8_t>& png, const char type[4], const std::vector<uint8_t>& data) {
     put_u32_be(png, static_cast<uint32_t>(data.size()));
     size_t chunk_begin = png.size();
     png.insert(png.end(), type, type + 4);
@@ -514,8 +569,8 @@ static void append_png_chunk(std::vector<uint8_t> &png, const char type[4], cons
     put_u32_be(png, crc32_bytes(png.data() + chunk_begin, png.size() - chunk_begin));
 }
 
-static void write_png_rgb8(const fs::path &path, const std::vector<uint8_t> &rgb, int width, int height) {
-    std::vector<uint8_t> png = {0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n'};
+static void write_png_rgb8(const fs::path& path, const std::vector<uint8_t>& rgb, int width, int height) {
+    std::vector<uint8_t> png = { 0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n' };
 
     std::vector<uint8_t> ihdr;
     put_u32_be(ihdr, static_cast<uint32_t>(width));
@@ -531,7 +586,7 @@ static void write_png_rgb8(const fs::path &path, const std::vector<uint8_t> &rgb
     filtered.reserve(static_cast<size_t>(height) * (static_cast<size_t>(width) * 3 + 1));
     for (int y = 0; y < height; ++y) {
         filtered.push_back(0);
-        const uint8_t *row = rgb.data() + static_cast<size_t>(y) * width * 3;
+        const uint8_t* row = rgb.data() + static_cast<size_t>(y) * width * 3;
         filtered.insert(filtered.end(), row, row + static_cast<size_t>(width) * 3);
     }
 
@@ -550,7 +605,7 @@ static void write_png_rgb8(const fs::path &path, const std::vector<uint8_t> &rgb
         zlib.push_back(static_cast<uint8_t>(nlen & 0xff));
         zlib.push_back(static_cast<uint8_t>((nlen >> 8) & 0xff));
         zlib.insert(zlib.end(), filtered.begin() + static_cast<std::ptrdiff_t>(pos),
-                    filtered.begin() + static_cast<std::ptrdiff_t>(pos + block));
+            filtered.begin() + static_cast<std::ptrdiff_t>(pos + block));
         pos += block;
     }
     put_u32_be(zlib, adler32_bytes(filtered.data(), filtered.size()));
@@ -561,10 +616,10 @@ static void write_png_rgb8(const fs::path &path, const std::vector<uint8_t> &rgb
     if (!file) {
         throw std::runtime_error("failed to open dump path " + path.string());
     }
-    file.write(reinterpret_cast<const char *>(png.data()), static_cast<std::streamsize>(png.size()));
+    file.write(reinterpret_cast<const char*>(png.data()), static_cast<std::streamsize>(png.size()));
 }
 
-static void dump_front_buffer_png(const fs::path &path, int width, int height) {
+static void dump_front_buffer_png(const fs::path& path, int width, int height) {
     std::vector<uint8_t> bottom_up(static_cast<size_t>(width) * height * 3);
     glPixelStorei(GL_PACK_ALIGNMENT, 1);
     glReadBuffer(GL_FRONT);
@@ -578,54 +633,63 @@ static void dump_front_buffer_png(const fs::path &path, int width, int height) {
     const size_t row_bytes = static_cast<size_t>(width) * 3;
     for (int y = 0; y < height; ++y) {
         std::memcpy(top_down.data() + static_cast<size_t>(y) * row_bytes,
-                    bottom_up.data() + static_cast<size_t>(height - 1 - y) * row_bytes, row_bytes);
+            bottom_up.data() + static_cast<size_t>(height - 1 - y) * row_bytes, row_bytes);
     }
     write_png_rgb8(path, top_down, width, height);
 }
 
-static void dump_tensor_png(const fs::path &path, const torch::Tensor &tensor, int width, int height) {
+static void dump_tensor_png(const fs::path& path, const torch::Tensor& tensor, int width, int height) {
     torch::Tensor cpu = tensor.detach().clamp(0.0, 1.0).mul(255.0).to(torch::kUInt8).to(torch::kCPU).contiguous();
     std::vector<uint8_t> rgb(static_cast<size_t>(width) * height * 3);
     std::memcpy(rgb.data(), cpu.data_ptr(), rgb.size());
     write_png_rgb8(path, rgb, width, height);
 }
 
-static Args parse_args(int argc, char **argv) {
+static Args parse_args(int argc, char** argv) {
     Args args;
     for (int i = 1; i < argc; ++i) {
         std::string a = argv[i];
-        auto need_value = [&](const std::string &name) -> std::string {
+        auto need_value = [&](const std::string& name) -> std::string {
             if (i + 1 >= argc) {
                 throw std::runtime_error("missing value for " + name);
             }
             return argv[++i];
-        };
+            };
         if (a == "-m" || a == "--model-path") {
             args.model_path = need_value(a);
-        } else if (a == "-t" || a == "--iteration") {
+        }
+        else if (a == "-t" || a == "--iteration") {
             args.iteration = std::stoi(need_value(a));
-        } else if (a == "--benchmark") {
+        }
+        else if (a == "--benchmark") {
             args.benchmark = true;
-        } else if (a == "--benchmark-seconds") {
+        }
+        else if (a == "--benchmark-seconds") {
             args.benchmark_seconds = std::stod(need_value(a));
             args.benchmark = true;
-        } else if (a == "--benchmark-test-cameras") {
+        }
+        else if (a == "--benchmark-test-cameras") {
             args.benchmark_camera_split = "test";
-        } else if (a == "--benchmark-cameras") {
+        }
+        else if (a == "--benchmark-cameras") {
             args.benchmark_camera_split = need_value(a);
             if (args.benchmark_camera_split != "train" && args.benchmark_camera_split != "test") {
                 throw std::runtime_error("--benchmark-cameras must be 'train' or 'test'");
             }
-        } else if (a == "--dump-frame") {
+        }
+        else if (a == "--dump-frame") {
             args.dump_frame_path = need_value(a);
-        } else if (a == "--dump-tensor") {
+        }
+        else if (a == "--dump-tensor") {
             args.dump_tensor_path = need_value(a);
-        } else if (a == "-h" || a == "--help") {
+        }
+        else if (a == "-h" || a == "--help") {
             std::cout << "Usage: fast_viewer -m MODEL_PATH [--iteration N] [--benchmark]"
-                         " [--benchmark-test-cameras|--benchmark-cameras train|test]"
-                         " [--dump-frame PATH.png] [--dump-tensor PATH.png]\n";
+                " [--benchmark-test-cameras|--benchmark-cameras train|test]"
+                " [--dump-frame PATH.png] [--dump-tensor PATH.png]\n";
             std::exit(0);
-        } else {
+        }
+        else {
             throw std::runtime_error("unknown argument: " + a);
         }
     }
@@ -635,19 +699,25 @@ static Args parse_args(int argc, char **argv) {
     return args;
 }
 
-static void disable_vsync(Display *display, GLXDrawable drawable) {
-    using SwapIntervalEXT = void (*)(Display *, GLXDrawable, int);
+#ifndef _WIN32
+static void disable_vsync(Display* display, GLXDrawable drawable) {
+    using SwapIntervalEXT = void (*)(Display*, GLXDrawable, int);
     using SwapIntervalMESA = int (*)(unsigned int);
-    auto ext = reinterpret_cast<SwapIntervalEXT>(glXGetProcAddressARB(reinterpret_cast<const GLubyte *>("glXSwapIntervalEXT")));
+    auto ext = reinterpret_cast<SwapIntervalEXT>(glXGetProcAddressARB(reinterpret_cast<const GLubyte*>("glXSwapIntervalEXT")));
     if (ext) {
         ext(display, drawable, 0);
         return;
     }
-    auto mesa = reinterpret_cast<SwapIntervalMESA>(glXGetProcAddressARB(reinterpret_cast<const GLubyte *>("glXSwapIntervalMESA")));
+    auto mesa = reinterpret_cast<SwapIntervalMESA>(glXGetProcAddressARB(reinterpret_cast<const GLubyte*>("glXSwapIntervalMESA")));
     if (mesa) {
         mesa(0);
     }
 }
+#else
+static void disable_vsync() {
+    glfwSwapInterval(0);
+}
+#endif
 
 static void draw_texture(GLuint texture) {
     glClear(GL_COLOR_BUFFER_BIT);
@@ -673,7 +743,187 @@ static void draw_texture(GLuint texture) {
     glEnd();
 }
 
-int main(int argc, char **argv) {
+static PlatformWindow create_platform_window(int width, int height) {
+    PlatformWindow pw;
+#ifdef _WIN32
+    if (!glfwInit()) {
+        throw std::runtime_error("failed to initialize GLFW");
+    }
+
+    pw.window = glfwCreateWindow(width, height, "Gray Fast Viewer", nullptr, nullptr);
+    if (!pw.window) {
+        glfwTerminate();
+        throw std::runtime_error("failed to create GLFW window");
+    }
+
+    glfwMakeContextCurrent(pw.window);
+    disable_vsync();
+    glfwGetFramebufferSize(pw.window, &pw.width, &pw.height);
+    pw.width = std::max(1, pw.width);
+    pw.height = std::max(1, pw.height);
+#else
+    pw.display = XOpenDisplay(nullptr);
+    if (!pw.display) {
+        throw std::runtime_error("failed to open X display");
+    }
+    int screen = DefaultScreen(pw.display);
+    int visual_attrs[] = { GLX_RGBA, GLX_DOUBLEBUFFER, GLX_RED_SIZE, 8, GLX_GREEN_SIZE, 8, GLX_BLUE_SIZE, 8, None };
+    XVisualInfo* visual = glXChooseVisual(pw.display, screen, visual_attrs);
+    if (!visual) {
+        throw std::runtime_error("failed to choose GLX visual");
+    }
+    Colormap cmap = XCreateColormap(pw.display, RootWindow(pw.display, screen), visual->visual, AllocNone);
+    XSetWindowAttributes swa = {};
+    swa.colormap = cmap;
+    swa.event_mask = ExposureMask | KeyPressMask | ButtonPressMask | ButtonReleaseMask | PointerMotionMask |
+        Button1MotionMask | StructureNotifyMask;
+    pw.window = XCreateWindow(pw.display, RootWindow(pw.display, screen), 0, 0, width, height, 0,
+        visual->depth, InputOutput, visual->visual, CWColormap | CWEventMask, &swa);
+    pw.wm_delete = XInternAtom(pw.display, "WM_DELETE_WINDOW", False);
+    XSetWMProtocols(pw.display, pw.window, &pw.wm_delete, 1);
+    XStoreName(pw.display, pw.window, "Gray Fast Viewer");
+    XMapWindow(pw.display, pw.window);
+
+    pw.gl_context = glXCreateContext(pw.display, visual, nullptr, GL_TRUE);
+    glXMakeCurrent(pw.display, pw.window, pw.gl_context);
+    disable_vsync(pw.display, pw.window);
+    XWindowAttributes window_attrs = {};
+    XGetWindowAttributes(pw.display, pw.window, &window_attrs);
+    pw.width = std::max(1, window_attrs.width);
+    pw.height = std::max(1, window_attrs.height);
+#endif
+    glViewport(0, 0, pw.width, pw.height);
+    return pw;
+}
+
+static void destroy_platform_window(PlatformWindow& pw) {
+#ifdef _WIN32
+    if (pw.window) {
+        glfwDestroyWindow(pw.window);
+        pw.window = nullptr;
+    }
+    glfwTerminate();
+#else
+    if (pw.display) {
+        glXMakeCurrent(pw.display, None, nullptr);
+        if (pw.gl_context) {
+            glXDestroyContext(pw.display, pw.gl_context);
+            pw.gl_context = nullptr;
+        }
+        if (pw.window) {
+            XDestroyWindow(pw.display, pw.window);
+            pw.window = 0;
+        }
+        XCloseDisplay(pw.display);
+        pw.display = nullptr;
+    }
+#endif
+}
+
+static void swap_buffers(PlatformWindow& pw) {
+#ifdef _WIN32
+    glfwSwapBuffers(pw.window);
+#else
+    glXSwapBuffers(pw.display, pw.window);
+#endif
+}
+
+static void set_window_title(PlatformWindow& pw, const std::string& title) {
+#ifdef _WIN32
+    glfwSetWindowTitle(pw.window, title.c_str());
+#else
+    XStoreName(pw.display, pw.window, title.c_str());
+#endif
+}
+
+static void sync_window(PlatformWindow& pw) {
+#ifndef _WIN32
+    XSync(pw.display, False);
+#else
+    (void)pw;
+#endif
+}
+
+static bool poll_window_events(PlatformWindow& pw) {
+#ifdef _WIN32
+    glfwPollEvents();
+    if (glfwWindowShouldClose(pw.window)) {
+        return false;
+    }
+
+    int new_width = 0;
+    int new_height = 0;
+    glfwGetFramebufferSize(pw.window, &new_width, &new_height);
+    new_width = std::max(1, new_width);
+    new_height = std::max(1, new_height);
+    if (new_width != pw.width || new_height != pw.height) {
+        pw.width = new_width;
+        pw.height = new_height;
+        glViewport(0, 0, pw.width, pw.height);
+    }
+
+    double mx = 0.0;
+    double my = 0.0;
+    glfwGetCursorPos(pw.window, &mx, &my);
+    if (glfwGetMouseButton(pw.window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS) {
+        if (!pw.left_mouse_down) {
+            pw.left_mouse_down = true;
+            pw.last_mouse_x = static_cast<int>(mx);
+            pw.last_mouse_y = static_cast<int>(my);
+        }
+        else {
+            pw.mouse_delta_x += static_cast<int>(mx) - pw.last_mouse_x;
+            pw.mouse_delta_y += static_cast<int>(my) - pw.last_mouse_y;
+            pw.last_mouse_x = static_cast<int>(mx);
+            pw.last_mouse_y = static_cast<int>(my);
+        }
+    }
+    else {
+        pw.left_mouse_down = false;
+    }
+    return true;
+#else
+    while (XPending(pw.display) > 0) {
+        XEvent event;
+        XNextEvent(pw.display, &event);
+        if (event.type == ClientMessage && static_cast<Atom>(event.xclient.data.l[0]) == pw.wm_delete) {
+            return false;
+        }
+        else if (event.type == ConfigureNotify) {
+            pw.width = std::max(1, event.xconfigure.width);
+            pw.height = std::max(1, event.xconfigure.height);
+            glViewport(0, 0, pw.width, pw.height);
+        }
+        else if (event.type == ButtonPress && event.xbutton.button == Button1) {
+            pw.left_mouse_down = true;
+            pw.last_mouse_x = event.xbutton.x;
+            pw.last_mouse_y = event.xbutton.y;
+        }
+        else if (event.type == ButtonRelease && event.xbutton.button == Button1) {
+            pw.left_mouse_down = false;
+        }
+        else if (event.type == MotionNotify && pw.left_mouse_down) {
+            pw.mouse_delta_x += event.xmotion.x - pw.last_mouse_x;
+            pw.mouse_delta_y += event.xmotion.y - pw.last_mouse_y;
+            pw.last_mouse_x = event.xmotion.x;
+            pw.last_mouse_y = event.xmotion.y;
+        }
+    }
+    return true;
+#endif
+}
+
+#ifdef _WIN32
+static bool platform_key_down(PlatformWindow& pw, int key) {
+    return key_down(pw.window, key);
+}
+#else
+static bool platform_key_down(const char keys[32], KeyCode key) {
+    return key_down(keys, key);
+}
+#endif
+
+int main(int argc, char** argv) {
     try {
         Args args = parse_args(argc, argv);
         if (!fs::exists(args.model_path) && args.model_path == fs::path("output/bicycle") &&
@@ -693,36 +943,7 @@ int main(int argc, char **argv) {
             mean_info = parse_tensor_info(header, "mean");
         }
 
-        Display *display = XOpenDisplay(nullptr);
-        if (!display) {
-            throw std::runtime_error("failed to open X display");
-        }
-        int screen = DefaultScreen(display);
-        int visual_attrs[] = {GLX_RGBA, GLX_DOUBLEBUFFER, GLX_RED_SIZE, 8, GLX_GREEN_SIZE, 8, GLX_BLUE_SIZE, 8, None};
-        XVisualInfo *visual = glXChooseVisual(display, screen, visual_attrs);
-        if (!visual) {
-            throw std::runtime_error("failed to choose GLX visual");
-        }
-        Colormap cmap = XCreateColormap(display, RootWindow(display, screen), visual->visual, AllocNone);
-        XSetWindowAttributes swa = {};
-        swa.colormap = cmap;
-        swa.event_mask = ExposureMask | KeyPressMask | ButtonPressMask | ButtonReleaseMask | PointerMotionMask |
-                         Button1MotionMask | StructureNotifyMask;
-        Window window = XCreateWindow(display, RootWindow(display, screen), 0, 0, cam.width, cam.height, 0,
-                                      visual->depth, InputOutput, visual->visual, CWColormap | CWEventMask, &swa);
-        Atom wm_delete = XInternAtom(display, "WM_DELETE_WINDOW", False);
-        XSetWMProtocols(display, window, &wm_delete, 1);
-        XStoreName(display, window, "Gray Fast Viewer");
-        XMapWindow(display, window);
-
-        GLXContext gl_context = glXCreateContext(display, visual, nullptr, GL_TRUE);
-        glXMakeCurrent(display, window, gl_context);
-        disable_vsync(display, window);
-        XWindowAttributes window_attrs = {};
-        XGetWindowAttributes(display, window, &window_attrs);
-        int window_width = std::max(1, window_attrs.width);
-        int window_height = std::max(1, window_attrs.height);
-        glViewport(0, 0, window_width, window_height);
+        PlatformWindow pw = create_platform_window(cam.width, cam.height);
 
         GLuint texture = 0;
         glGenTextures(1, &texture);
@@ -733,13 +954,13 @@ int main(int argc, char **argv) {
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP);
         glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA32F, cam.width, cam.height, 0, GL_RGBA, GL_FLOAT, nullptr);
 
-        cudaGraphicsResource *cuda_texture = nullptr;
+        cudaGraphicsResource* cuda_texture = nullptr;
         CUDA_CHECK(cudaGraphicsGLRegisterImage(&cuda_texture, texture, GL_TEXTURE_2D,
-                                               cudaGraphicsRegisterFlagsWriteDiscard));
+            cudaGraphicsRegisterFlagsWriteDiscard));
 
         std::cerr << "Loading " << mean_info.shape[0] << " gaussians from " << checkpoint << "\n";
         Raytracer rt(cam.width, cam.height, mean_info.shape[0], cfg.sh_max_degree, cfg.ppll_forward_size, 1,
-                 false);
+            false);
         configure_raytracer(rt, cfg);
         load_gaussians(rt, checkpoint, cfg.sh);
         rt.rebuild_bvh();
@@ -755,16 +976,28 @@ int main(int argc, char **argv) {
             CUDA_CHECK(cudaGraphicsMapResources(1, &cuda_texture, 0));
             CUDA_CHECK(cudaGraphicsSubResourceGetMappedArray(&array, cuda_texture, 0, 0));
             CUDA_CHECK(upload_rgb_to_rgba_array(array,
-                                                static_cast<const float *>(rt.framebuffer_data->output_channels.data_ptr()),
-                                                cam.width, cam.height, 0));
+                static_cast<const float*>(rt.framebuffer_data->output_channels.data_ptr()),
+                cam.width, cam.height, 0));
             CUDA_CHECK(cudaGraphicsUnmapResources(1, &cuda_texture, 0));
 
             draw_texture(texture);
-            glXSwapBuffers(display, window);
-        };
+            swap_buffers(pw);
+            };
+
+        auto cleanup = [&]() {
+            if (cuda_texture) {
+                CUDA_CHECK(cudaGraphicsUnregisterResource(cuda_texture));
+                cuda_texture = nullptr;
+            }
+            if (texture != 0) {
+                glDeleteTextures(1, &texture);
+                texture = 0;
+            }
+            destroy_platform_window(pw);
+            };
 
         if (!args.benchmark_camera_split.empty()) {
-            const std::vector<CameraState> &benchmark_cameras =
+            const std::vector<CameraState>& benchmark_cameras =
                 args.benchmark_camera_split == "train" ? loaded_cameras.train : loaded_cameras.test;
             if (benchmark_cameras.empty()) {
                 throw std::runtime_error("no " + args.benchmark_camera_split + " cameras found in cameras.json");
@@ -773,11 +1006,11 @@ int main(int argc, char **argv) {
             cam = benchmark_cameras.front();
             upload_camera(rt, cam);
             render_to_texture();
-            XSync(display, False);
+            sync_window(pw);
 
             std::cerr << "Warming " << benchmark_cameras.size() << " " << args.benchmark_camera_split
-                      << " cameras\n";
-            for (const CameraState &benchmark_cam : benchmark_cameras) {
+                << " cameras\n";
+            for (const CameraState& benchmark_cam : benchmark_cameras) {
                 cam = benchmark_cam;
                 upload_camera(rt, cam);
                 torch::NoGradGuard no_grad;
@@ -791,7 +1024,7 @@ int main(int argc, char **argv) {
             CUDA_CHECK(cudaEventCreate(&start_event));
             CUDA_CHECK(cudaEventCreate(&end_event));
             CUDA_CHECK(cudaEventRecord(start_event, 0));
-            for (const CameraState &benchmark_cam : benchmark_cameras) {
+            for (const CameraState& benchmark_cam : benchmark_cameras) {
                 cam = benchmark_cam;
                 upload_camera(rt, cam);
                 torch::NoGradGuard no_grad;
@@ -807,37 +1040,43 @@ int main(int argc, char **argv) {
             double fps = static_cast<double>(benchmark_cameras.size()) / std::max(elapsed_ms / 1000.0, 1e-9);
             std::cout << std::fixed << std::setprecision(2) << fps << "\n";
 
-            CUDA_CHECK(cudaGraphicsUnregisterResource(cuda_texture));
-            glDeleteTextures(1, &texture);
-            glXMakeCurrent(display, None, nullptr);
-            glXDestroyContext(display, gl_context);
-            XDestroyWindow(display, window);
-            XCloseDisplay(display);
+            cleanup();
             return 0;
         }
 
-        const KeyCode key_w = XKeysymToKeycode(display, XK_w);
-        const KeyCode key_a = XKeysymToKeycode(display, XK_a);
-        const KeyCode key_s = XKeysymToKeycode(display, XK_s);
-        const KeyCode key_d = XKeysymToKeycode(display, XK_d);
-        const KeyCode key_q = XKeysymToKeycode(display, XK_q);
-        const KeyCode key_e = XKeysymToKeycode(display, XK_e);
-        const KeyCode key_u = XKeysymToKeycode(display, XK_u);
-        const KeyCode key_o = XKeysymToKeycode(display, XK_o);
-        const KeyCode key_i = XKeysymToKeycode(display, XK_i);
-        const KeyCode key_k = XKeysymToKeycode(display, XK_k);
-        const KeyCode key_j = XKeysymToKeycode(display, XK_j);
-        const KeyCode key_l = XKeysymToKeycode(display, XK_l);
-        const KeyCode key_escape = XKeysymToKeycode(display, XK_Escape);
+#ifdef _WIN32
+        const int key_w = GLFW_KEY_W;
+        const int key_a = GLFW_KEY_A;
+        const int key_s = GLFW_KEY_S;
+        const int key_d = GLFW_KEY_D;
+        const int key_q = GLFW_KEY_Q;
+        const int key_e = GLFW_KEY_E;
+        const int key_u = GLFW_KEY_U;
+        const int key_o = GLFW_KEY_O;
+        const int key_i = GLFW_KEY_I;
+        const int key_k = GLFW_KEY_K;
+        const int key_j = GLFW_KEY_J;
+        const int key_l = GLFW_KEY_L;
+        const int key_escape = GLFW_KEY_ESCAPE;
+#else
+        const KeyCode key_w = XKeysymToKeycode(pw.display, XK_w);
+        const KeyCode key_a = XKeysymToKeycode(pw.display, XK_a);
+        const KeyCode key_s = XKeysymToKeycode(pw.display, XK_s);
+        const KeyCode key_d = XKeysymToKeycode(pw.display, XK_d);
+        const KeyCode key_q = XKeysymToKeycode(pw.display, XK_q);
+        const KeyCode key_e = XKeysymToKeycode(pw.display, XK_e);
+        const KeyCode key_u = XKeysymToKeycode(pw.display, XK_u);
+        const KeyCode key_o = XKeysymToKeycode(pw.display, XK_o);
+        const KeyCode key_i = XKeysymToKeycode(pw.display, XK_i);
+        const KeyCode key_k = XKeysymToKeycode(pw.display, XK_k);
+        const KeyCode key_j = XKeysymToKeycode(pw.display, XK_j);
+        const KeyCode key_l = XKeysymToKeycode(pw.display, XK_l);
+        const KeyCode key_escape = XKeysymToKeycode(pw.display, XK_Escape);
+#endif
 
         bool running = true;
         bool printed_benchmark = false;
         bool dumped_frame = false;
-        bool left_mouse_down = false;
-        int last_mouse_x = 0;
-        int last_mouse_y = 0;
-        int mouse_delta_x = 0;
-        int mouse_delta_y = 0;
         int frames = 0;
         int title_frames = 0;
         auto last = Clock::now();
@@ -845,36 +1084,22 @@ int main(int argc, char **argv) {
         auto title_start = last;
 
         while (running) {
-            while (XPending(display) > 0) {
-                XEvent event;
-                XNextEvent(display, &event);
-                if (event.type == ClientMessage && static_cast<Atom>(event.xclient.data.l[0]) == wm_delete) {
-                    running = false;
-                } else if (event.type == ConfigureNotify) {
-                    window_width = std::max(1, event.xconfigure.width);
-                    window_height = std::max(1, event.xconfigure.height);
-                    glViewport(0, 0, window_width, window_height);
-                } else if (event.type == ButtonPress && event.xbutton.button == Button1) {
-                    left_mouse_down = true;
-                    last_mouse_x = event.xbutton.x;
-                    last_mouse_y = event.xbutton.y;
-                } else if (event.type == ButtonRelease && event.xbutton.button == Button1) {
-                    left_mouse_down = false;
-                } else if (event.type == MotionNotify && left_mouse_down) {
-                    mouse_delta_x += event.xmotion.x - last_mouse_x;
-                    mouse_delta_y += event.xmotion.y - last_mouse_y;
-                    last_mouse_x = event.xmotion.x;
-                    last_mouse_y = event.xmotion.y;
-                }
-            }
+            running = poll_window_events(pw);
 
             auto now = Clock::now();
             double dt = std::chrono::duration<double>(now - last).count();
             last = now;
 
+#ifndef _WIN32
             char keys[32];
-            XQueryKeymap(display, keys);
-            if (key_down(keys, key_escape)) {
+            XQueryKeymap(pw.display, keys);
+#endif
+
+#ifdef _WIN32
+            if (platform_key_down(pw, key_escape)) {
+#else
+            if (platform_key_down(keys, key_escape)) {
+#endif
                 running = false;
             }
             if (!args.benchmark) {
@@ -885,55 +1110,63 @@ int main(int argc, char **argv) {
                 constexpr float radians_per_pixel = 3.14159265358979323846f / 150.0f;
 
                 bool camera_dirty = false;
-                std::array<float, 3> origin_motion = {0.0f, 0.0f, 0.0f};
-                std::array<float, 3> rotation_motion = {0.0f, 0.0f, 0.0f};
+                std::array<float, 3> origin_motion = { 0.0f, 0.0f, 0.0f };
+                std::array<float, 3> rotation_motion = { 0.0f, 0.0f, 0.0f };
 
-                if (key_down(keys, key_w)) {
+#define KEY_IS_DOWN(k) platform_key_down(pw, k)
+#ifndef _WIN32
+#undef KEY_IS_DOWN
+#define KEY_IS_DOWN(k) platform_key_down(keys, k)
+#endif
+
+                if (KEY_IS_DOWN(key_w)) {
                     add_scaled(origin_motion, cam.forward, 1.0f);
                 }
-                if (key_down(keys, key_a)) {
+                if (KEY_IS_DOWN(key_a)) {
                     add_scaled(origin_motion, cam.right, -1.0f);
                 }
-                if (key_down(keys, key_q)) {
+                if (KEY_IS_DOWN(key_q)) {
                     add_scaled(origin_motion, cam.up, -1.0f);
                 }
-                if (key_down(keys, key_s)) {
+                if (KEY_IS_DOWN(key_s)) {
                     add_scaled(origin_motion, cam.forward, -1.0f);
                 }
-                if (key_down(keys, key_d)) {
+                if (KEY_IS_DOWN(key_d)) {
                     add_scaled(origin_motion, cam.right, 1.0f);
                 }
-                if (key_down(keys, key_e)) {
+                if (KEY_IS_DOWN(key_e)) {
                     add_scaled(origin_motion, cam.up, 1.0f);
                 }
 
-                if (key_down(keys, key_o)) {
+                if (KEY_IS_DOWN(key_o)) {
                     rotation_motion[0] += 50.0f * radians_per_pixel;
                 }
-                if (key_down(keys, key_u)) {
+                if (KEY_IS_DOWN(key_u)) {
                     rotation_motion[0] -= 50.0f * radians_per_pixel;
                 }
-                if (key_down(keys, key_i)) {
+                if (KEY_IS_DOWN(key_i)) {
                     rotation_motion[1] += 50.0f * radians_per_pixel;
                 }
-                if (key_down(keys, key_k)) {
+                if (KEY_IS_DOWN(key_k)) {
                     rotation_motion[1] -= 50.0f * radians_per_pixel;
                 }
-                if (key_down(keys, key_j)) {
+                if (KEY_IS_DOWN(key_j)) {
                     rotation_motion[2] += 50.0f * radians_per_pixel;
                 }
-                if (key_down(keys, key_l)) {
+                if (KEY_IS_DOWN(key_l)) {
                     rotation_motion[2] -= 50.0f * radians_per_pixel;
                 }
 
-                if (mouse_delta_x != 0 || mouse_delta_y != 0) {
-                    float angle_right = -static_cast<float>(mouse_delta_y) * radians_per_pixel *
-                                        static_cast<float>(dt) * mouse_speed;
-                    float angle_up = -static_cast<float>(mouse_delta_x) * radians_per_pixel *
-                                     static_cast<float>(dt) * mouse_speed;
+#undef KEY_IS_DOWN
+
+                if (pw.mouse_delta_x != 0 || pw.mouse_delta_y != 0) {
+                    float angle_right = -static_cast<float>(pw.mouse_delta_y) * radians_per_pixel *
+                        static_cast<float>(dt) * mouse_speed;
+                    float angle_up = -static_cast<float>(pw.mouse_delta_x) * radians_per_pixel *
+                        static_cast<float>(dt) * mouse_speed;
                     camera_dirty = apply_rotation(cam, 0.0f, angle_right, angle_up) || camera_dirty;
-                    mouse_delta_x = 0;
-                    mouse_delta_y = 0;
+                    pw.mouse_delta_x = 0;
+                    pw.mouse_delta_y = 0;
                 }
 
                 float weight = 1.0f - std::exp(-static_cast<float>(dt) / (smoothness + 1e-6f));
@@ -950,10 +1183,10 @@ int main(int argc, char **argv) {
                 }
                 if (almost_nonzero(cam.smoothed_rotation_motion)) {
                     camera_dirty = apply_rotation(cam,
-                                                  cam.smoothed_rotation_motion[0] * static_cast<float>(dt) * rot_speed,
-                                                  cam.smoothed_rotation_motion[1] * static_cast<float>(dt) * rot_speed,
-                                                  cam.smoothed_rotation_motion[2] * static_cast<float>(dt) * rot_speed) ||
-                                   camera_dirty;
+                        cam.smoothed_rotation_motion[0] * static_cast<float>(dt) * rot_speed,
+                        cam.smoothed_rotation_motion[1] * static_cast<float>(dt) * rot_speed,
+                        cam.smoothed_rotation_motion[2] * static_cast<float>(dt) * rot_speed) ||
+                        camera_dirty;
                 }
 
                 if (camera_dirty) {
@@ -975,20 +1208,20 @@ int main(int argc, char **argv) {
             CUDA_CHECK(cudaGraphicsMapResources(1, &cuda_texture, 0));
             CUDA_CHECK(cudaGraphicsSubResourceGetMappedArray(&array, cuda_texture, 0, 0));
             CUDA_CHECK(upload_rgb_to_rgba_array(array,
-                                                static_cast<const float *>(rt.framebuffer_data->output_channels.data_ptr()),
-                                                cam.width, cam.height, 0));
+                static_cast<const float*>(rt.framebuffer_data->output_channels.data_ptr()),
+                cam.width, cam.height, 0));
             CUDA_CHECK(cudaGraphicsUnmapResources(1, &cuda_texture, 0));
 
             draw_texture(texture);
-            glXSwapBuffers(display, window);
+            swap_buffers(pw);
             ++frames;
             ++title_frames;
 
             if ((!args.dump_frame_path.empty() || !args.dump_tensor_path.empty()) && !dumped_frame) {
                 glFinish();
-                XSync(display, False);
+                sync_window(pw);
                 if (!args.dump_frame_path.empty()) {
-                    dump_front_buffer_png(args.dump_frame_path, window_width, window_height);
+                    dump_front_buffer_png(args.dump_frame_path, pw.width, pw.height);
                     std::cerr << "Wrote displayed frame to " << args.dump_frame_path << "\n";
                 }
                 dumped_frame = true;
@@ -1003,7 +1236,7 @@ int main(int argc, char **argv) {
                 double fps = title_frames / title_elapsed;
                 std::ostringstream title;
                 title << "Gray Fast Viewer - " << std::fixed << std::setprecision(1) << fps << " FPS";
-                XStoreName(display, window, title.str().c_str());
+                set_window_title(pw, title.str());
                 title_frames = 0;
                 title_start = now;
             }
@@ -1017,7 +1250,7 @@ int main(int argc, char **argv) {
                     running = false;
                 }
             }
-        }
+            }
 
         if (args.benchmark && !printed_benchmark) {
             auto end = Clock::now();
@@ -1025,15 +1258,11 @@ int main(int argc, char **argv) {
             std::cout << std::fixed << std::setprecision(2) << (frames / std::max(elapsed, 1e-9)) << "\n";
         }
 
-        CUDA_CHECK(cudaGraphicsUnregisterResource(cuda_texture));
-        glDeleteTextures(1, &texture);
-        glXMakeCurrent(display, None, nullptr);
-        glXDestroyContext(display, gl_context);
-        XDestroyWindow(display, window);
-        XCloseDisplay(display);
+        cleanup();
         return 0;
-    } catch (const std::exception &e) {
+        }
+    catch (const std::exception& e) {
         std::cerr << "fast_viewer: " << e.what() << "\n";
         return 1;
     }
-}
+    }
