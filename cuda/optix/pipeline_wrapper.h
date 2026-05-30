@@ -62,11 +62,11 @@ class PipelineWrapper {
     }
 
 #ifdef _WIN32
-    static std::string getSharedObjectDir() {
+    static std::string getPtxPath() {
         HMODULE hModule = nullptr;
 
         if (!GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
-                                reinterpret_cast<LPCSTR>(&PipelineWrapper::getSharedObjectDir), &hModule)) {
+                                reinterpret_cast<LPCSTR>(&PipelineWrapper::getPtxPath), &hModule)) {
             return "";
         }
 
@@ -76,27 +76,31 @@ class PipelineWrapper {
             return "";
 
         std::filesystem::path p(path);
+        std::filesystem::path parent = p.parent_path();
+        std::filesystem::path parent_of_parent = parent.parent_path();
 
-        // parent of the parent
-        std::filesystem::path parent_of_parent = p.parent_path().parent_path();
+        for (const auto &candidate_root : {parent_of_parent, parent}) {
+            std::filesystem::path candidate = candidate_root / "libgray.ptx";
+            if (std::filesystem::exists(candidate))
+                return candidate.string();
+        }
 
-        std::cerr << parent_of_parent.string() << std::endl;
-        return std::string(parent_of_parent.string());
+        return (parent_of_parent / "libgray.ptx").string();
     }
 #else
-    static std::string getSharedObjectDir() {
+    static std::string getPtxPath() {
         Dl_info dl_info;
-        dladdr((void *)getSharedObjectDir, &dl_info);
+        dladdr((void *)getPtxPath, &dl_info);
         std::string path(dl_info.dli_fname);
         char *path_dup = strdup(path.c_str());
         std::string dir = dirname(path_dup);
         free(path_dup);
-        return dir;
+        return dir + "/libgray.ptx";
     }
 #endif
 
     static std::string loadPtxFile() {
-        std::string path = getSharedObjectDir() + "/libgray.ptx";
+        std::string path = getPtxPath();
         std::ifstream file(path.c_str(), std::ios::binary);
         if (file.good()) {
             std::vector<unsigned char> buffer = std::vector<unsigned char>(std::istreambuf_iterator<char>(file), {});

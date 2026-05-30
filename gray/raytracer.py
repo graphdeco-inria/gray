@@ -6,22 +6,29 @@ from gray.mlp import PreMLP, PostMLP
 from gray.exposure_comp import ExposureComp
 
 
+def _find_library_path():
+    parent_dir = os.path.dirname(os.path.abspath(__file__))
+    project_dir = os.path.dirname(parent_dir)
+    search_dirs = [
+        # * In a pip install, the shared library is dumped next to this file.
+        parent_dir,
+        # * During development, the shared library lives in the project build folder.
+        os.path.join(project_dir, "build"),
+        os.path.join(project_dir, "build", "Release"),
+    ]
+    lib_names = ["libgray.so", "gray.dll", "libgray.dylib"]
+    candidates = [os.path.join(directory, lib_name) for directory in search_dirs for lib_name in lib_names]
+
+    for path in candidates:
+        if os.path.exists(path):
+            return path
+
+    tried_paths = "\n - ".join(candidates)
+    raise FileNotFoundError(f"Unable to locate the raytracer library. Tried:\n - {tried_paths}")
+
+
 class Raytracer(torch.nn.Module):
-    __PARENT_DIR = os.path.dirname(os.path.abspath(__file__))
-    if sys.platform == "win32":
-        # Windows: look for gray.dll in build\Release\
-        __PROJECT_DIR = os.path.dirname(__PARENT_DIR)
-        LIB_PATH = os.path.join(__PROJECT_DIR, "build", "Release", "gray.dll")
-    elif os.path.exists(os.path.join(__PARENT_DIR, "libgray.so")):
-        # * In a pip module, the shared library is dumped next to this file
-        LIB_PATH = os.path.join(__PARENT_DIR, "libgray.so")
-    else:
-        # * During development, the shared library is in the project's build folder
-        LIB_PATH = os.path.join(
-            os.path.dirname(__PARENT_DIR),
-            "build",
-            "libgray.so",
-        )
+    LIB_PATH = _find_library_path()
     LOADED = False
 
     def __init__(

@@ -2,7 +2,15 @@ cmake_minimum_required(VERSION 3.24)
 project(gray LANGUAGES CXX CUDA)
 set(CMAKE_CUDA_ARCHITECTURES native)
 
-# Use dynamic CUDA runtime instead of static
+# * Set minimum requirements
+set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
+set(CMAKE_CUDA_STANDARD 20)
+set(CMAKE_CUDA_STANDARD_REQUIRED ON)
+set(CMAKE_CUDA_EXTENSIONS OFF)
+
+# * Use dynamic CUDA runtime instead of static
 set(CMAKE_CUDA_RUNTIME_LIBRARY Shared)
 
 # * Set default build type to 'Release'
@@ -20,6 +28,7 @@ option(GRAY_BUILD_FAST_VIEWER "Build the standalone C++ fast viewer" OFF)
 
 # * Dependency Discovery
 find_package(Python3 COMPONENTS Interpreter Development REQUIRED)
+
 # We use this to be able to link against CUDA::cudart and/or CUDA::cuda_driver
 find_package(CUDAToolkit REQUIRED)
 find_package(OptiX8 REQUIRED)
@@ -39,20 +48,20 @@ add_library(gray SHARED ${SOURCES})
 # * OptiX PTX Target
 add_library(optix_program OBJECT "cuda/shaders.cu")
 set_target_properties(optix_program PROPERTIES
-        CUDA_ARCHITECTURES OFF
-        CUDA_PTX_COMPILATION ON
+    CUDA_ARCHITECTURES OFF
+    CUDA_PTX_COMPILATION ON
 )
 
 # * Include Directories
 target_include_directories(gray PRIVATE
-        ${CUDA_INCLUDE_DIRS}
-        ${PYTHON_INCLUDE_DIRS}
-        ${OptiX8_INCLUDE_DIRS}
-        ${CMAKE_CUDA_TOOLKIT_INCLUDE_DIRECTORIES}
+    ${Python3_INCLUDE_DIRS}
+    ${CUDAToolkit_INCLUDE_DIRS}
+    ${OptiX8_INCLUDE_DIRS}
 )
 
 target_include_directories(optix_program PRIVATE
-        ${OptiX8_INCLUDE_DIRS}
+    ${CUDAToolkit_INCLUDE_DIRS}
+    ${OptiX8_INCLUDE_DIRS}
 )
 
 # * Compile-time configuration
@@ -67,7 +76,6 @@ target_compile_definitions(gray PRIVATE
     ENABLE_OPTIX
     CMAKE_BINARY_DIR="${CMAKE_BINARY_DIR}"
     CMAKE_CURRENT_LIST_DIR="${CMAKE_CURRENT_LIST_DIR}"
-    $<$<BOOL:$ENV{EXTRA_H_AVAILABLE}>:EXTRA_H_AVAILABLE=1>
     OPTIX_SAMPLE_NAME_DEFINE=gray
     OPTIX_SAMPLE_DIR_DEFINE=gray
 )
@@ -93,14 +101,13 @@ set(CMAKE_INTERPROCEDURAL_OPTIMIZATION_RELEASE ON)
 target_link_libraries(gray PRIVATE
     Python3::Python
     ${TORCH_LIBRARIES}
-    ${CUDA_LIBRARIES}
-    ${CUDA_CUBLAS_LIBRARIES}
     CUDA::cudart
     CUDA::cublas
-    ${OptiX_LIBRARIES}
+    OptiX8
 )
 target_link_libraries(optix_program PRIVATE
     ${TORCH_LIBRARIES}
+    OptiX8
 )
 
 # * Custom: copy the .ptx next to the .so

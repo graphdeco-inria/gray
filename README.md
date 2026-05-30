@@ -12,14 +12,13 @@ Using the [`uv`](https://github.com/astral-sh/uv) package manager (installable w
 ```bash
 git submodule update --init --recursive   # pull submodules
 bash install.sh                           # create environment & install dependencies
-source .venv/*/activate                   # activate environment
+source .venv/bin/activate                 # activate environment
 bash ./make.sh                            # compile the cuda raytracer into `build/`
 ```
 
 This codebase requires a graphics card supporting OptiX 8 and a local CUDA 12 toolkit installation exposing `nvcc`.
 
-We are working on Windows support using WSL. Please report any issues if you attempt working on Windows.
-
+For Windows please refer to [windows/WINDOWS_README.md](windows/WINDOWS_README.md).
 
 ## Viewing Pretrained Models
 The pretrained models are [available online](https://repo-sam.inria.fr/nerphys/gray/pretrained.html) and can be downloaded in batch with `bash scripts/download_all_pretrained_scenes.sh`. You can open them in the interactive viewer with
@@ -246,5 +245,7 @@ This includes, but is not limited to:
 Thanks to [Jeffrey Hu](https://jefequien.github.io/) for helping with the code and pointing us towards dense initialization.
 
 Thanks to [Ishaan Shah](https://ishaanshah.xyz/) for the Gaussian Viewer.
+
+Thanks to [Simon Lucas](https://simon-lucas.fr/) for help on the Windows configuration.
 
 > This research was co-funded by the European Union (EU) ERC Advanced Grant NERPHYS No 101141721. Views and opinions expressed are however those of the author(s) only and do not necessarily reflect those of the EU or the European Research Council. Neither the EU nor the granting authority can be held responsible for them. Experiments presented in this paper were carried out using the Grid'5000 testbed, supported by a scientific interest group hosted by Inria and including CNRS, RENATER and several Universities as well as other organizations. This research was also supported by NSERC grant RGPIN-2020-04799 and the Digital Research Alliance Canada. The authors are grateful to Adobe and NVIDIA for generous donations.

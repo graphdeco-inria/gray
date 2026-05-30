@@ -50,40 +50,41 @@ def resize_image(img_name, src_dir, out_dirs, downsizing_factors, max_size):
         img_resized.save(out_path)
 
 
-cfg = tyro.cli(Config)
+if __name__ == "__main__":
+    cfg = tyro.cli(Config)
 
-args = cfg
-src_dir = Path(args.source_path) / args.images_dir
-out_dirs = [src_dir.parent / f"{args.images_dir}_{factor}" for factor in args.downsizing_factors]
+    args = cfg
+    src_dir = Path(args.source_path) / args.images_dir
+    out_dirs = [src_dir.parent / f"{args.images_dir}_{factor}" for factor in args.downsizing_factors]
 
-# * Check for existing output directories
-existing = [str(d) for d in out_dirs if d.exists()]
-if existing and not args.yes:
-    print(f"The following output directories already exist: {', '.join(existing)}")
-    resp = input("Overwrite them? [y/N]: ").strip().lower()
-    if resp != "y":
-        print("Aborted.")
-        sys.exit(1)
+    # * Check for existing output directories
+    existing = [str(d) for d in out_dirs if d.exists()]
+    if existing and not args.yes:
+        print(f"The following output directories already exist: {', '.join(existing)}")
+        resp = input("Overwrite them? [y/N]: ").strip().lower()
+        if resp != "y":
+            print("Aborted.")
+            sys.exit(1)
 
-# * Remove existing output directories
-for d in out_dirs:
-    if d.exists():
-        for f in d.iterdir():
-            f.unlink()
-        d.rmdir()
+    # * Remove existing output directories
+    for d in out_dirs:
+        if d.exists():
+            for f in d.iterdir():
+                f.unlink()
+            d.rmdir()
 
-# * Create output directories
-for d in out_dirs:
-    d.mkdir(parents=True, exist_ok=True)
+    # * Create output directories
+    for d in out_dirs:
+        d.mkdir(parents=True, exist_ok=True)
 
-# * Process images
-img_list = [img_name for img_name in os.listdir(src_dir) if (src_dir / img_name).is_file()]
-with ProcessPoolExecutor() as executor:
-    futures = {
-        executor.submit(resize_image, img_name, src_dir, out_dirs, args.downsizing_factors, args.max_size): img_name
-        for img_name in img_list
-    }
-    for future in tqdm(as_completed(futures), total=len(futures), desc="Resizing images"):
-        err = future.result()
-        if err:
-            print(err)
+    # * Process images
+    img_list = [img_name for img_name in os.listdir(src_dir) if (src_dir / img_name).is_file()]
+    with ProcessPoolExecutor() as executor:
+        futures = {
+            executor.submit(resize_image, img_name, src_dir, out_dirs, args.downsizing_factors, args.max_size): img_name
+            for img_name in img_list
+        }
+        for future in tqdm(as_completed(futures), total=len(futures), desc="Resizing images"):
+            err = future.result()
+            if err:
+                print(err)
