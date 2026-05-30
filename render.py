@@ -40,7 +40,16 @@ else:
     save_path = os.path.join(cli.model_path, f"gaussians_{iteration:05d}.safetensors")
 
 # * Load the scene and raytracer
-scene = SceneInfo.from_colmap(cfg)
+# * Fall back to the cameras saved in the model's cameras.json when the colmap
+# * dataset is unavailable (e.g. rendering pretrained scenes without the data).
+try:
+    scene = SceneInfo.from_colmap(cfg)
+except FileNotFoundError:
+    print(
+        f"Colmap dataset not found at '{cfg.source_path}'; "
+        f"falling back to cameras saved in the model's cameras.json"
+    )
+    scene = SceneInfo.from_cameras_json(cli.model_path)
 cam0 = scene.train_cameras[0]
 raytracer = Raytracer.from_safetensors(
     cfg,
@@ -71,7 +80,7 @@ for split in cli.splits:
     futures = []
 
     for i, cam in enumerate(cameras):
-        gt = images[cam.image_name]
+        gt = images.get(cam.image_name)
         if cli.fov_y is not None:
             cam.fov_y = cli.fov_y
 
@@ -82,9 +91,11 @@ for split in cli.splits:
         futures.append(
             executor.submit(save_image, render, os.path.join(dir_name, "renders", f"{i:05d}.png"))
         )
-        futures.append(
-            executor.submit(save_image, gt, os.path.join(dir_name, "gt", f"{i:05d}.png"))
-        )
+        # * Ground truth is only available when the dataset images are present.
+        if gt is not None:
+            futures.append(
+                executor.submit(save_image, gt, os.path.join(dir_name, "gt", f"{i:05d}.png"))
+            )
 
     for _ in tqdm(as_completed(futures), total=len(futures), desc=f"Saving {split} images"):
         pass
