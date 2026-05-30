@@ -31,6 +31,7 @@ if os.path.exists(cfg.model_path) and not cfg.yes:
 # * Wait until after Config parsing to import slower modules
 from gray.imports import *
 from gray.prelude import *
+from gray.memory import GpuMemoryMonitor
 from concurrent.futures import ThreadPoolExecutor
 from threading import Thread
 from torch.utils.tensorboard import SummaryWriter
@@ -144,6 +145,7 @@ print("iteration train test", file=preview_psnr_log, flush=True)
 preview_ssim_log = open(os.path.join(cfg.model_path, f"preview_ssim.csv"), "w")
 print("iteration train test", file=preview_ssim_log, flush=True)
 executor = ThreadPoolExecutor()
+memory_monitor = GpuMemoryMonitor().start()
 
 # *** Training loop
 iteration = 1
@@ -401,6 +403,11 @@ progress_bar.close()
 writer.close()
 timestamp = time.strftime("%H:%M:%S", time.gmtime(time.time() - start))
 print(f"Training complete ({timestamp})")
+
+# * Record peak GPU memory use
+peak_mib = memory_monitor.stop()
+memory_monitor.save(cfg.model_path)
+print(f"Peak GPU memory use: {peak_mib / 1024:.2f} GB")
 
 if cfg.viewer:
     viewer_thd.join()
