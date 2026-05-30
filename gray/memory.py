@@ -4,8 +4,8 @@ from threading import Thread, Event
 
 
 class GpuMemoryMonitor:
-    # * Polls nvidia-smi (on PATH on both Linux and Windows) for this process's peak
-    # *** GPU memory. Per-process memory reads as N/A on Windows consumer GPUs (WDDM mode).
+    # * Polls nvidia-smi (on PATH on both Linux and Windows) for this process's peak GPU memory.
+    # * Per-process memory reads as N/A on Windows consumer GPUs (WDDM mode).
 
     def __init__(self, interval: float = 0.25):
         self.interval = interval
