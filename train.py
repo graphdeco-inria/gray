@@ -152,10 +152,12 @@ iteration = 1
 start = time.time()
 progress_bar = tqdm(total=cfg.iterations, desc="Training progress", initial=1)
 while iteration < cfg.iterations + 1:
-    random.shuffle(scene.train_cameras)
-    for camera in scene.train_cameras:
+    camera_pool = scene.train_cameras.copy()
+    random.shuffle(camera_pool)
+    while camera_pool:
         # * Save preview images rendered at fixed viewpoints
         if iteration in cfg.preview_iters:
+            raytracer.set_render_resolution(cam0.image_width, cam0.image_height)
             views = [
                 ("train", cam0, scene.train_images, "preview_train_psnr", "preview_train_ssim")
             ]
@@ -230,23 +232,35 @@ while iteration < cfg.iterations + 1:
         if cfg.exposure_comp_enabled:
             raytracer.exposure_comp.set_lr(schedule_exposure_comp(iteration - 1))
 
+        # * Warmup at half resolution
+        if iteration <= cfg.half_res_iters:
+            raytracer.set_render_resolution(cam0.image_width // 2, cam0.image_height // 2)
+            images = scene.train_images_halfres
+            batch_size = cfg.half_res_batch_size
+        else:
+            raytracer.set_render_resolution(cam0.image_width, cam0.image_height)
+            images = scene.train_images
+            batch_size = 1
+
         # *** Forward pass
-        render_unclamped = raytracer(camera)
-        render = render_unclamped.clamp(0, 1)
-        if cfg.exposure_comp_enabled:
-            render_unclamped = raytracer.exposure_comp(render_unclamped, camera.image_name)
+        batch = [camera_pool.pop() for _ in range(min(batch_size, len(camera_pool)))]
+        for camera in batch:
+            render_unclamped = raytracer(camera)
+            render = render_unclamped.clamp(0, 1)
+            if cfg.exposure_comp_enabled:
+                render_unclamped = raytracer.exposure_comp(render_unclamped, camera.image_name)
 
-        # * Compute loss
-        target = scene.train_images[camera.image_name]
-        loss = F.l1_loss(render_unclamped, target)
-        if cfg.lambda_ssim > 0.0:
-            from fused_ssim import fused_ssim
+            # * Compute loss
+            target = images[camera.image_name]
+            loss = F.l1_loss(render_unclamped, target)
+            if cfg.lambda_ssim > 0.0:
+                from fused_ssim import fused_ssim
 
-            ssim_score = fused_ssim(render_unclamped[None], target[None])
-            loss = (1.0 - cfg.lambda_ssim) * loss + cfg.lambda_ssim * (1.0 - ssim_score)
+                ssim_score = fused_ssim(render_unclamped[None], target[None])
+                loss = (1.0 - cfg.lambda_ssim) * loss + cfg.lambda_ssim * (1.0 - ssim_score)
 
-        # *** Backward pass and optimization step
-        raytracer.backward(loss)
+            # *** Backward pass and optimization step
+            raytracer.backward(loss / batch_size)
         raytracer.step()
 
         # * Scale decay
@@ -332,6 +346,7 @@ while iteration < cfg.iterations + 1:
         # * Evaluate PSNR
         start_val = time.time()
         if iteration in cfg.test_iters:
+            raytracer.set_render_resolution(cam0.image_width, cam0.image_height)
             print(f"{iteration:05d}", end="", file=psnr_log)
             print(f"{iteration:05d}", end="", file=ssim_log)
             scores = {}
