@@ -124,6 +124,7 @@ struct Raytracer : torch::CustomClassHolder {
     }
 
     void step() {
+        meta_data->total_num_steps += 1;
         adam_step(params_on_host.gaussians, meta_data->total_num_steps.item<int>(),
                   config_data->zero_grads.item<bool>(), config_data->update_channels.item<bool>(),
                   gaussian_data->beta_1.item<float>(), gaussian_data->beta_2.item<float>(),
@@ -147,6 +148,15 @@ struct Raytracer : torch::CustomClassHolder {
                               &params_on_host.gaussians, sizeof(Gaussians), cudaMemcpyHostToDevice));
     }
 
+    void set_render_resolution(int64_t new_width, int64_t new_height) {
+        TORCH_CHECK(new_width >= 1 && new_height >= 1, "render resolution must be positive");
+        TORCH_CHECK(new_width <= (int64_t)params_on_host.image_width &&
+                        new_height <= (int64_t)params_on_host.image_height,
+                    "render resolution cannot exceed the allocated framebuffer size");
+        width = new_width;
+        height = new_height;
+    }
+
     static void bind(torch::Library &m) {
         m.class_<Raytracer>("Raytracer")
             .def(torch::init<int64_t, int64_t, int64_t, int64_t, int64_t, int64_t, bool>())
@@ -157,6 +167,7 @@ struct Raytracer : torch::CustomClassHolder {
             .def("update_bvh", &Raytracer::update_bvh)
             .def("rebuild_bvh", &Raytracer::rebuild_bvh)
             .def("resize", &Raytracer::resize)
+            .def("set_render_resolution", &Raytracer::set_render_resolution)
             .def("get_camera", [](const c10::intrusive_ptr<Raytracer> &self) { return self->camera_data; })
             .def("get_config", [](const c10::intrusive_ptr<Raytracer> &self) { return self->config_data; })
             .def("get_framebuffer", [](const c10::intrusive_ptr<Raytracer> &self) { return self->framebuffer_data; })

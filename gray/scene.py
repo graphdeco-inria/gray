@@ -26,12 +26,13 @@ class BasicPointCloud:
 
 @dataclass
 class SceneInfo:
-    point_cloud: BasicPointCloud
+    point_cloud: Optional[BasicPointCloud]
     train_cameras: List[CameraInfo]
     test_cameras: List[CameraInfo]
-    train_images: List[torch.Tensor]
-    test_images: List[torch.Tensor]
-    pc_path: str
+    train_images: Dict[str, torch.Tensor]
+    train_images_halfres: Dict[str, torch.Tensor]
+    test_images: Dict[str, torch.Tensor]
+    pc_path: Optional[str]
     is_nerf_synthetic: bool
 
     @staticmethod
@@ -132,6 +133,14 @@ class SceneInfo:
         train_images = dict(train_futures)
         test_images = dict(test_futures)
 
+        # * Precompute half-resolution for warmup phase
+        train_images_halfres = {}
+        if cfg.half_res_iters > 0:
+            train_images_halfres = {
+                name: F.interpolate(image[None], scale_factor=0.5, mode="area")[0]
+                for name, image in train_images.items()
+            }
+
         return SceneInfo(
             point_cloud=pcd,
             train_cameras=train_cam_infos,
@@ -140,6 +149,7 @@ class SceneInfo:
             test_images=test_images,
             pc_path=pc_path,
             is_nerf_synthetic=False,
+            train_images_halfres=train_images_halfres,
         )
 
     @staticmethod
@@ -175,6 +185,7 @@ class SceneInfo:
             train_cameras=train_cam_infos,
             test_cameras=test_cam_infos,
             train_images=load_images(train_cam_infos),
+            train_images_halfres={},
             test_images=load_images(test_cam_infos),
             pc_path=None,
             is_nerf_synthetic=False,

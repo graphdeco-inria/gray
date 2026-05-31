@@ -33,9 +33,6 @@ struct MetaDataHolder : torch::CustomClassHolder {
         bool grad_is_enabled = torch::autograd::GradMode::is_enabled();
         grads_enabled.fill_(grad_is_enabled);
         total_num_calls += 1;
-        if (grad_is_enabled) {
-            total_num_steps += 1;
-        }
     }
 
     static void bind(torch::Library &m) {

@@ -60,6 +60,10 @@ class RaytracerConfig:
     init_binning: bool = True
     init_bin_size: float =  0.0015  # * Post-bugfix default; tuned to roughly match old behavior at 0.04
 
+    # * Low-resolution higher batch size warmup
+    half_res_iters: int = 0  
+    half_res_batch_size: int = 1  
+
     # * Loss
     lambda_ssim: float = 0.2
 
