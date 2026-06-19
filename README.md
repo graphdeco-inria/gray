@@ -13,7 +13,7 @@ Using the [`uv`](https://github.com/astral-sh/uv) package manager (installable w
 git submodule update --init --recursive   # pull submodules
 bash install.sh                           # create environment & install dependencies
 source .venv/bin/activate                 # activate environment
-bash ./make.sh                            # compile the cuda raytracer into `build/`
+bash make.sh                            # compile the cuda raytracer into `build/`
 ```
 
 This codebase requires a graphics card supporting OptiX 8 and a local CUDA 12 toolkit installation exposing `nvcc`.
