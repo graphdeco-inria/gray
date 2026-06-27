@@ -13,7 +13,7 @@ Using the [`uv`](https://github.com/astral-sh/uv) package manager (installable w
 git submodule update --init --recursive   # pull submodules
 bash install.sh                           # create environment & install dependencies
 source .venv/bin/activate                 # activate environment
-bash make.sh                            # compile the cuda raytracer into `build/`
+bash make.sh                              # compile the cuda raytracer into `build/`
 ```
 
 This codebase requires a graphics card supporting OptiX 8 and a local CUDA 12 toolkit installation exposing `nvcc`.
@@ -56,7 +56,7 @@ Here are the expected results from the latest version of the code:
 | PSNR | SSIM | LPIPS | Time | FPS |
 | ---: | ---: | ---: | ---: | ---: |
 | 26.44 | 0.818 | 0.238 | 05:37 | 271 |
-<!-- | 26.45 | 0.818 | 0.238 | 05:30 | 250 | -->
+<!-- Metrics in the original release: | 26.45 | 0.818 | 0.238 | 05:30 | 250 | -->
 
 Minor changes from the paper are explained further below.
 
@@ -182,7 +182,7 @@ The viewer can be used remotely, in which case a server renders the images and d
 ```
 python view.py --server -m $MODEL_DIR
 ```
-On the client, you can install the minimal required dependencies with `uv venv && source .venv/*/activate && uv pip install -r viewer/requirements.txt` and then run 
+On the client, you can install the minimal required dependencies with `uv venv && source .venv/bin/activate && uv pip install -r viewer/requirements.txt` and then run 
 ```
 python view.py --client $SERVER_IP
 ```
@@ -207,14 +207,13 @@ You can render depth maps with `--render_depth`.
 ### Bugfixes
 We fixed a minor bug in how the bin size was computed for initialization binning. As such, the default value for `init_bin_size` differs from the value reported in the paper and quantitative results may differ by negligible amounts (< 0.1 dB).
 
-### Changes
+### Changes Since the Ppaer
 Since the paper's publication, the following improvements have been applied:
 - Switched PPLL storage of alpha and distance values to 16bits, saving memory at a neligible quality decrease.
 - Added a half resolution warmup phase at batch size 2, which improves quality slightly without slowing training.
 - Reimplemented spherical harmonics; in particular they now run at 16 bit during inference which improves final FPS.
 - Improved memory use at inference by skipping the allocation of unneeded buffers.
 - Other minor implementation improvements for FPS (fast-paths for Gaussian kernel, avoiding superflous framebuffer writes and copies).
-
 
 ## Troubleshooting
 Please report any problems you encounter with installation in the GitHub issues.
