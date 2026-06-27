@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cuda_fp16.h>
+
 struct PerPixelLinkedList {
     static constexpr uint32_t NULL_PTR = std::numeric_limits<uint32_t>::max();
 
@@ -8,8 +10,8 @@ struct PerPixelLinkedList {
     uint32_t *total_hits;
 
     uint32_t *gaussian_ids;
-    float *distances;
-    float *alphas;
+    __half *distances;
+    __half *alphas;
 
     uint32_t *previous_entries;
 
@@ -23,11 +25,14 @@ struct PerPixelLinkedList {
             __trap();
         }
         gaussian_ids[hit_idx] = gaussian_id;
-        distances[hit_idx] = distance;
-        alphas[hit_idx] = alpha;
+        distances[hit_idx] = __float2half_rn(distance);
+        alphas[hit_idx] = __float2half_rn(alpha);
         previous_entries[hit_idx] = head_per_pixel[pixel_id];
         head_per_pixel[pixel_id] = hit_idx;
     }
+
+    __device__ __forceinline__ float distance(uint32_t hit_idx) const { return __half2float(distances[hit_idx]); }
+    __device__ __forceinline__ float alpha(uint32_t hit_idx) const { return __half2float(alphas[hit_idx]); }
 
     __device__ void reset(uint32_t pixel_id) { head_per_pixel[pixel_id] = NULL_PTR; }
 
@@ -77,8 +82,8 @@ struct PPLLDataHolder : torch::CustomClassHolder {
         head_per_pixel = torch::zeros({image_height, image_width}, CUDA_INT32);
         head_per_pixel.fill_((int)PerPixelLinkedList::NULL_PTR);
         gaussian_ids = torch::zeros({size_}, CUDA_INT32);
-        distances = torch::zeros({size_}, CUDA_FLOAT32);
-        alphas = torch::zeros({size_}, CUDA_FLOAT32);
+        distances = torch::zeros({size_}, CUDA_FLOAT16);
+        alphas = torch::zeros({size_}, CUDA_FLOAT16);
         previous_entries = torch::zeros({size_}, CUDA_INT32);
         size = size_;
     }
@@ -87,8 +92,8 @@ struct PPLLDataHolder : torch::CustomClassHolder {
         PerPixelLinkedList pll = {.head_per_pixel = reinterpret_cast<uint32_t *>(head_per_pixel.data_ptr()),
                                   .total_hits = reinterpret_cast<uint32_t *>(total_hits.data_ptr()),
                                   .gaussian_ids = reinterpret_cast<uint32_t *>(gaussian_ids.data_ptr()),
-                                  .distances = reinterpret_cast<float *>(distances.data_ptr()),
-                                  .alphas = reinterpret_cast<float *>(alphas.data_ptr()),
+                                  .distances = reinterpret_cast<__half *>(distances.data_ptr()),
+                                  .alphas = reinterpret_cast<__half *>(alphas.data_ptr()),
                                   .previous_entries = reinterpret_cast<uint32_t *>(previous_entries.data_ptr()),
                                   .size = size};
         strncpy(pll.name, name, 8);

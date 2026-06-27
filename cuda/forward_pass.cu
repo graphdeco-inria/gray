@@ -51,12 +51,12 @@ __device__ __forceinline__ Pixel forward_pass(uint32_t pixel_id, const float3 ra
         for (auto hit_idx : params.ppll_forward.pixel_view(pixel_id)) {
             // * In the first iteration, accumulate values over all gaussians for estimating the truncated contribution
             if (iteration == 0) {
-                float alpha = params.ppll_forward.alphas[hit_idx];
+                float alpha = params.ppll_forward.alpha(hit_idx);
                 skipped_weighted_channels += alpha * read_channels(params, params.ppll_forward.gaussian_ids[hit_idx]);
                 skipped_total_alpha += alpha;
             }
 
-            float curr_distance = params.ppll_forward.distances[hit_idx];
+            float curr_distance = params.ppll_forward.distance(hit_idx);
             if (curr_distance > tmin && curr_distance < distances[BUFFER_SIZE - 1]) {
                 distances[BUFFER_SIZE - 1] = curr_distance;
                 hit_idxes[BUFFER_SIZE - 1] = hit_idx;
@@ -92,7 +92,7 @@ __device__ __forceinline__ Pixel forward_pass(uint32_t pixel_id, const float3 ra
 
                 // * Fetch data from PPLL
                 uint32_t gaussian_id = params.ppll_forward.gaussian_ids[hit_idxes[i]];
-                float alpha = params.ppll_forward.alphas[hit_idxes[i]];
+                float alpha = params.ppll_forward.alpha(hit_idxes[i]);
 
                 // * Fetch gaussian data
                 floatK gaussian_channels = read_channels(params, gaussian_id);
