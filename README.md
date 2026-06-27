@@ -55,8 +55,10 @@ Here are the expected results from the latest version of the code:
 
 | PSNR | SSIM | LPIPS | Time | FPS |
 | ---: | ---: | ---: | ---: | ---: |
-| 26.45 | 0.818 | 0.238 | 05:30 | 250 |
+| 26.44 | 0.818 | 0.238 | 05:37 | 271 |
+<!-- | 26.45 | 0.818 | 0.238 | 05:30 | 250 | -->
 
+Minor changes from the paper are explained further below.
 
 ## Step-by-Step Workflow
 This section explains how to run scenes step-by-step. You can skip it if you followed the automated reproduction steps above.
@@ -204,6 +206,14 @@ You can render depth maps with `--render_depth`.
 
 ### Bugfixes
 We fixed a minor bug in how the bin size was computed for initialization binning. As such, the default value for `init_bin_size` differs from the value reported in the paper and quantitative results may differ by negligible amounts (< 0.1 dB).
+
+### Changes
+Since the paper's publication, the following improvements have been applied:
+- Switched PPLL storage of alpha and distance values to 16bits, saving memory at a neligible quality decrease.
+- Added a half resolution warmup phase at batch size 2, which improves quality slightly without slowing training.
+- Reimplemented spherical harmonics; in particular they now run at 16 bit during inference which improves final FPS.
+- Improved memory use at inference by skipping the allocation of unneeded buffers.
+- Other minor implementation improvements for FPS (fast-paths for Gaussian kernel, avoiding superflous framebuffer writes and copies).
 
 
 ## Troubleshooting
